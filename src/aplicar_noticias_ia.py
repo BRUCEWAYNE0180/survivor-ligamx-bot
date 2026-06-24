@@ -76,6 +76,26 @@ def ya_existe_baja(lista: List[Dict[str, Any]], jugador: str) -> bool:
     return False
 
 
+def limpiar_bajas_ia_previas(partido: Dict[str, Any]) -> None:
+    """
+    Borra bajas anteriores generadas por IA para evitar que una noticia vieja
+    siga afectando el partido cuando el nuevo reporte ya no confirma esa baja.
+    Conserva bajas manuales si no tienen actualizado_por de este pipeline.
+    """
+    for campo in ["lesiones", "suspendidos"]:
+        valor = partido.get(campo, [])
+        if not isinstance(valor, list):
+            partido[campo] = []
+            continue
+
+        partido[campo] = [
+            item for item in valor
+            if not (
+                isinstance(item, dict)
+                and str(item.get("actualizado_por", "")).startswith("src/aplicar_noticias_ia.py")
+            )
+        ]
+
 def aplicar_baja_a_partido(partido: Dict[str, Any], baja: Dict[str, Any]) -> bool:
     local = str(buscar_valor(partido, LOCAL_KEYS) or "")
     visitante = str(buscar_valor(partido, VISITANTE_KEYS) or "")
@@ -140,6 +160,7 @@ def main() -> int:
     aplicadas = 0
 
     for partido in partidos:
+        limpiar_bajas_ia_previas(partido)
         partido["bajas_revisadas"] = True
 
         for baja in bajas:
