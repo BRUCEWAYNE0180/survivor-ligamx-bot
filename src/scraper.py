@@ -20,7 +20,7 @@ def obtener_datos_casino():
     MARKETS = "h2h" # Mercado 1X2 (Local, Empate, Visitante)
     ODDS_FORMAT = "decimal"
 
-    url = f"https://the-odds-api.com{SPORT}/odds/?apiKey={API_KEY}&regions={REGIONS}&markets={MARKETS}&oddsFormat={ODDS_FORMAT}"
+    url = f"https://api.the-odds-api.com/v4/sports/{SPORT}/odds/?apiKey={API_KEY}&regions={REGIONS}&markets={MARKETS}&oddsFormat={ODDS_FORMAT}"
     
     # Base de datos local de Estadios y Altitudes para enriquecer la información
     DATOS_ESTADIOS = {
