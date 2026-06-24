@@ -68,6 +68,11 @@ run_step "Ajustar pick anti-tumba" python3 src/ajustar_pick_survivor.py --main-l
 run_step "Generar reporte final" python3 src/generar_reporte.py --main-log "$LOG" --output "$REPORTE"
 
 echo "" | tee -a "$LOG"
+echo "▶️ Enviar reporte por Telegram" | tee -a "$LOG"
+echo "--------------------------------------------------" | tee -a "$LOG"
+python3 src/telegram_notifier.py --report "$REPORTE" 2>&1 | tee -a "$LOG" || true
+
+echo "" | tee -a "$LOG"
 echo "🏁 PROCESO COMPLETO" | tee -a "$LOG"
 echo "📄 Log completo: $LOG" | tee -a "$LOG"
 echo "📋 Reporte final: $REPORTE" | tee -a "$LOG"
