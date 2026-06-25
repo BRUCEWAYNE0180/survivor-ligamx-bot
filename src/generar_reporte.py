@@ -13,6 +13,8 @@ BASE_DIR = Path(__file__).resolve().parents[1]
 JORNADAS_PATH = BASE_DIR / "data" / "jornadas.json"
 CONFIG_SURVIVOR_PATH = BASE_DIR / "data" / "config_survivor.json"
 BAJAS_IA_PATH = BASE_DIR / "data" / "bajas_ia_ultimo.json"
+PICK_AJUSTADO_JSON_PATH = BASE_DIR / "data" / "pick_ajustado_survivor.json"
+PRE_CIERRE_JSON_PATH = BASE_DIR / "data" / "pre_cierre_survivor.json"
 
 
 LOCAL_KEYS = ["local", "equipo_local", "home", "home_team", "casa"]
@@ -101,6 +103,65 @@ def extraer_pick_desde_log(texto: str) -> Dict[str, str]:
     return pick
 
 
+def extraer_decision_final_real() -> Dict[str, str]:
+    """
+    Alinea el encabezado del reporte final con el auditor pre-cierre.
+    El pick del log principal es técnico; el estado real para enviar lo decide pre_cierre_survivor.
+    """
+    pre_cierre = cargar_json(PRE_CIERRE_JSON_PATH, {})
+    pick_ajustado = cargar_json(PICK_AJUSTADO_JSON_PATH, {})
+
+    decision = "NO DETECTADA"
+    mensaje = ""
+
+    if isinstance(pre_cierre, dict):
+        decision = str(
+            pre_cierre.get("decision_final")
+            or pre_cierre.get("decision")
+            or pre_cierre.get("estado")
+            or decision
+        )
+        mensaje = str(pre_cierre.get("mensaje") or pre_cierre.get("motivo") or "")
+
+    if decision == "NO DETECTADA" and isinstance(pick_ajustado, dict):
+        decision = str(
+            pick_ajustado.get("decision")
+            or pick_ajustado.get("decision_final")
+            or pick_ajustado.get("estado")
+            or decision
+        )
+        mensaje = str(pick_ajustado.get("mensaje") or pick_ajustado.get("motivo") or mensaje)
+
+    # Fallback por si solo existen reportes .txt.
+    pre_cierre_txt = BASE_DIR / "reports" / "pre_cierre_survivor_ultimo.txt"
+    if decision == "NO DETECTADA" and pre_cierre_txt.exists():
+        texto = pre_cierre_txt.read_text(encoding="utf-8", errors="ignore")
+        m = re.search(r"Decisión final:\s*(.+)", texto)
+        if m:
+            decision = m.group(1).strip()
+        m = re.search(r"Mensaje:\s*(.+)", texto)
+        if m:
+            mensaje = m.group(1).strip()
+
+    decision_upper = decision.upper()
+
+    if "NO ENVIAR" in decision_upper or "ESPERAR" in decision_upper:
+        estado_pick_tecnico = "SOLO REFERENCIA / NO ENVIAR"
+    elif "CERRAR" in decision_upper:
+        estado_pick_tecnico = "APTO SEGÚN PRE-CIERRE"
+    else:
+        estado_pick_tecnico = "PENDIENTE DE PRE-CIERRE"
+
+    if not mensaje and estado_pick_tecnico == "SOLO REFERENCIA / NO ENVIAR":
+        mensaje = "Faltan condiciones reales para enviar, normalmente mercado real API / momios reales."
+
+    return {
+        "decision_final": decision,
+        "estado_pick_tecnico": estado_pick_tecnico,
+        "mensaje": mensaje,
+    }
+
+
 def formatear_bajas(partido: Dict[str, Any]) -> str:
     lesiones = partido.get("lesiones", [])
     suspendidos = partido.get("suspendidos", [])
@@ -146,6 +207,7 @@ def main() -> int:
         log_text = Path(args.main_log).read_text(encoding="utf-8", errors="ignore")
 
     pick = extraer_pick_desde_log(log_text)
+    decision_real = extraer_decision_final_real()
 
     salida = []
     salida.append("REPORTE SURVIVOR LIGA MX — SATCHEL")
@@ -153,12 +215,15 @@ def main() -> int:
     salida.append(f"Generado: {datetime.now().isoformat(timespec='seconds')}")
     salida.append("")
 
-    salida.append("PICK OFICIAL")
+    salida.append("PICK OFICIAL TÉCNICO")
     salida.append("-" * 60)
     salida.append(f"Equipo: {pick['equipo']}")
     salida.append(f"Rival: {pick['rival']}")
     salida.append(f"Probabilidad avanzar: {pick['probabilidad']}")
-    salida.append(f"Estado auditor: {pick['estado_auditor']}")
+    salida.append(f"Estado: {decision_real['estado_pick_tecnico']}")
+    salida.append(f"Decisión final real: {decision_real['decision_final']}")
+    if decision_real.get("mensaje"):
+        salida.append(f"Motivo: {decision_real['mensaje']}")
     salida.append("")
 
     pick_ajustado_path = BASE_DIR / "reports" / "pick_ajustado_ultimo.txt"
