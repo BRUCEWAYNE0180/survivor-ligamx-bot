@@ -69,7 +69,7 @@ def fetch_odds_with_failover(sport, regions, markets, odds_format):
             if response.status_code in FAILOVER_STATUS_CODES:
                 print(f"⚠️ The Odds API error técnico {response.status_code} con llave {label}.")
                 if idx < len(keys) - 1:
-                    print("➡️ Probando llave backup por falla técnica del servidor.")
+                    print("Servidor principal no responde, conectando a nodo de respaldo")
                     continue
                 print("❌ The Odds API sigue con error técnico. No hay más llaves de respaldo.")
                 return None
@@ -87,7 +87,7 @@ def fetch_odds_with_failover(sport, regions, markets, odds_format):
         except (requests.Timeout, requests.ConnectionError) as exc:
             print(f"⚠️ Falla técnica de red con The Odds API usando llave {label}: {type(exc).__name__}")
             if idx < len(keys) - 1:
-                print("➡️ Probando llave backup por timeout/conexión.")
+                print("Servidor principal no responde, conectando a nodo de respaldo")
                 continue
             print("❌ The Odds API no respondió y no hay más backup.")
             return None

@@ -283,7 +283,7 @@ def llamar_groq(texto_noticias: str) -> Dict[str, Any]:
                 print(f"⚠️ Groq falla técnica con llave {label}: {type(exc).__name__}")
 
                 if idx < len(keys) - 1:
-                    print("➡️ Probando llave backup por falla técnica de Groq.")
+                    print("Servidor principal no responde, conectando a nodo de respaldo")
                     continue
 
                 raise RuntimeError("Groq falló técnicamente y no hay más backup.") from exc
