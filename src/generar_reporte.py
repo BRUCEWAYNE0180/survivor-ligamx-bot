@@ -168,6 +168,13 @@ def main() -> int:
         salida.extend(pick_ajustado_path.read_text(encoding="utf-8", errors="ignore").strip().splitlines())
         salida.append("")
 
+    pre_cierre_path = BASE_DIR / "reports" / "pre_cierre_survivor_ultimo.txt"
+    if pre_cierre_path.exists():
+        salida.append("AUDITOR PRE-CIERRE")
+        salida.append("-" * 60)
+        salida.extend(pre_cierre_path.read_text(encoding="utf-8", errors="ignore").strip().splitlines())
+        salida.append("")
+
     salida.append("SURVIVOR")
     salida.append("-" * 60)
     salida.append(f"Equipos bloqueados: {', '.join(bloqueados) if bloqueados else 'No detectados'}")
