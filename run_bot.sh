@@ -48,6 +48,12 @@ run_step "Normalizar jornada" python3 src/normalizar_jornadas.py || exit 1
 run_step "Sincronizar momios reales API" python3 src/sync_odds_api.py
 run_step "Buscar noticias web Liga MX" python3 src/actualizador_noticias_web.py
 
+if [ -f "src/limitar_noticias.py" ]; then
+  run_step "Limitar noticias para Groq antes de IA" python3 src/limitar_noticias.py
+else
+  echo "⚠️ No existe src/limitar_noticias.py; se intenta IA sin pre-limitador." | tee -a "$LOG"
+fi
+
 run_step "Aplicar noticias con IA" python3 -u src/aplicar_noticias_ia.py
 IA_STATUS=$?
 
