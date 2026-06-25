@@ -1,5 +1,45 @@
 # Changelog — Survivor Liga MX Bot
 
+## v1.34.0 — Multi-Market Watchdog
+
+### Añadido
+- Monitoreo **multi-mercado** en `src/market_watchdog.py` (además de 1X2/Moneyline),
+  cuando The Odds API los publica:
+  - **Totals / Over-Under** (línea preferida 2.5, configurable con `--totals-line`
+    o `ODDS_WATCHDOG_TOTALS_LINE`).
+  - **BTTS / Ambos Anotan** (Sí/No).
+  - **Hándicap / Spread** principal (línea + precio).
+  - **Draw No Bet / Empate No Acción**.
+- Si un mercado opcional no está disponible, se reporta `mercado no disponible` y
+  se continúa de forma segura (no se fuerza ningún mercado).
+- Conversión a **probabilidad implícita** (sin vig) por mercado y clasificación:
+  - `< 5` pts → `NORMAL` (solo se guarda).
+  - `5 a 8` pts → `IMPORTANTE` (Telegram opcional con `--telegram-importante`).
+  - `>= 8` pts → `DRASTICO` (Telegram).
+  - `CRITICO`: flip de favorito (1X2/DNB/spread), flip de lado (Over/Under, BTTS),
+    o movimiento mayor de línea de hándicap (`>= 0.5`). Envía Telegram.
+- **Anti-duplicado por mercado**: no reenvía el mismo movimiento salvo escalada de
+  severidad, nuevo flip, empeoramiento material (`>= 3` pts) o nuevo movimiento de
+  línea de hándicap. Registro en `mercados_alertas`.
+- Snapshots multi-mercado en `data/watchdog_state.json` (`mercados_baseline`).
+- Las alertas usan la etiqueta `AUDITAR / NO ENVIAR AUTOMÁTICO`, **nunca `CERRAR`**.
+- Nueva bandera CLI `--totals-line`.
+- Tests nuevos: extracción de mercados opcionales presentes/ausentes, clasificación
+  de movimiento Over/Under, BTTS, hándicap (línea) y Draw No Bet, detección de
+  flip de lado/favorito, prevención de duplicados y `0/9` sin cambios.
+
+### Interpretación Survivor
+- 1X2 / ML: mercado **primario**.
+- Over/Under y BTTS: contexto de **volatilidad/riesgo**.
+- Hándicap y Draw No Bet: señales de **fuerza/contexto**.
+
+### Sin cambios
+- Sigue siendo independiente de `run_bot.sh`.
+- No produce picks automáticos; la decisión final (`CERRAR`) la controla
+  `auditor_pre_cierre.py` / Real Data Gate.
+- `0/9` permanece `ESPERAR / NO ENVIAR`, sin evaluar movimiento ni spam.
+- Mercado 1X2 completo marca `READY_FOR_FULL_AUDIT`, no `CERRAR`.
+
 ## v1.33.0 — Odds Movement Watchdog
 
 ### Añadido

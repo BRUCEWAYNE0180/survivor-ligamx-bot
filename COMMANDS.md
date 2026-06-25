@@ -25,7 +25,7 @@ python3 src/market_status.py
 python3 src/api_budget.py report
 ```
 
-## Market Watchdog (v1.32.0 + v1.33.0)
+## Market Watchdog (v1.32.0 + v1.33.0 + v1.34.0)
 
 Vigía ligero e independiente del mercado de la jornada actual. **No corre el bot
 completo, no cierra ni envía picks.**
@@ -33,15 +33,25 @@ completo, no cierra ni envía picks.**
 - **Disponibilidad (v1.32.0):** avisa por Telegram solo cuando la disponibilidad
   de mercado cambia de forma significativa (evita spam). Mercado completo marca
   `READY_FOR_FULL_AUDIT`, nunca `CERRAR`. Etiquetas: `CERRAR / ESPERAR / CAMBIAR / NO ENVIAR`.
-- **Movimiento de momios (v1.33.0):** una vez que hay mercado real, guarda
-  snapshots 1X2 (local/empate/visitante), los convierte a probabilidad implícita
-  (sin vig) y compara contra el snapshot previo:
-  - `< 5` pts de probabilidad → `NORMAL`: solo se guarda, sin Telegram.
-  - `5 a 8` pts → `IMPORTANTE`: se reporta; Telegram opcional (`--telegram-importante`).
-  - `>= 8` pts → `DRASTICO`: Telegram.
-  - Cambio de favorito → Telegram más fuerte.
-  - No reenvía el mismo movimiento salvo que empeore materialmente (anti-duplicado).
+- **Movimiento 1X2 (v1.33.0):** snapshots 1X2, probabilidad implícita (sin vig),
+  clasificación NORMAL/IMPORTANTE/DRASTICO y cambio de favorito.
+- **Multi-mercado (v1.34.0):** además de 1X2/Moneyline, monitorea cuando The Odds
+  API los publica:
+  - **Over/Under** (preferente 2.5): movimiento de probabilidad implícita.
+  - **BTTS / Ambos Anotan** (Sí/No): movimiento de probabilidad implícita.
+  - **Hándicap / Spread**: cambio de línea y/o de precio.
+  - **Draw No Bet / Empate No Acción**: movimiento de probabilidad implícita.
+  - Mercado opcional ausente → se reporta `mercado no disponible` y se continúa.
+  - Clasificación: `NORMAL` (<5 pts), `IMPORTANTE` (5-8), `DRASTICO` (>=8),
+    `CRITICO` (flip de favorito/lado, flip Over/Under o BTTS, o movimiento mayor
+    de línea de hándicap).
+  - Telegram para `DRASTICO`/`CRITICO`; `IMPORTANTE` solo con `--telegram-importante`.
+  - Anti-duplicado: no reenvía el mismo movimiento salvo que empeore materialmente.
   - Etiqueta de estas alertas: `AUDITAR / NO ENVIAR AUTOMÁTICO`, nunca `CERRAR`.
+
+**Interpretación Survivor:** 1X2/ML es el mercado primario; Over/Under y BTTS son
+contexto de volatilidad/riesgo; Hándicap y Draw No Bet son señales de
+fuerza/contexto. Ninguno cierra un pick automáticamente.
 
 ```bash
 # Revisión normal (puede hacer 1 consulta en vivo si budget/cooldown lo permiten)
@@ -59,23 +69,30 @@ python3 src/market_watchdog.py --no-telegram
 # Diagnóstico sin guardar estado ni enviar Telegram
 python3 src/market_watchdog.py --dry-run
 
-# Solo disponibilidad, sin seguimiento de movimiento de momios
+# Solo disponibilidad, sin seguimiento de movimiento de mercados
 python3 src/market_watchdog.py --no-movimiento
 
 # También enviar Telegram para movimientos IMPORTANTES (5-8 pts)
 python3 src/market_watchdog.py --telegram-importante
+
+# Cambiar la línea de Over/Under monitoreada (default 2.5)
+python3 src/market_watchdog.py --totals-line 3.0
 ```
 
 Variables de entorno relevantes:
 
 - `ODDS_WATCHDOG_MIN_INTERVAL_MINUTES`: cooldown del watchdog (default `180`).
 - `ODDS_WATCHDOG_TELEGRAM_IMPORTANTE`: `1` para incluir IMPORTANTE en Telegram.
+- `ODDS_WATCHDOG_TOTALS_LINE`: línea de Over/Under preferida (default `2.5`).
+- `ODDS_MARKETS` (de `sync_odds_api`): para que The Odds API devuelva mercados
+  opcionales, inclúyelos aquí, p. ej. `h2h,totals,btts,spreads,draw_no_bet`.
+  Si no se piden/publican, el watchdog reporta `mercado no disponible`.
 - `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID`: destino de las alertas Telegram.
 
 Archivos que produce (en carpetas locales ignoradas por git):
 
-- `data/watchdog_state.json`: último estado (disponibilidad + baseline de momios
-  `odds_baseline` y registro anti-duplicado `odds_alertas`).
+- `data/watchdog_state.json`: último estado (disponibilidad + snapshots
+  multi-mercado `mercados_baseline` y registro anti-duplicado `mercados_alertas`).
 - `reports/market_watchdog_ultimo.txt`: reporte legible de la última corrida.
 
 ## Tests

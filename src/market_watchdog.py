@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Market Watchdog — Survivor Liga MX (v1.33.0)
+Market Watchdog — Survivor Liga MX (v1.34.0)
 
 Vigía ligero e independiente del mercado real (momios) de la jornada actual.
 
@@ -22,12 +22,28 @@ v1.33.0 — Movimiento de momios (1X2):
     * Cambio de favorito     -> Telegram más fuerte.
 - Evita Telegram duplicado del mismo movimiento salvo que empeore materialmente.
 
+v1.34.0 — Multi-mercado:
+- Además de 1X2 / Moneyline, monitorea (cuando The Odds API los publica):
+    * Totals / Over-Under (preferente Over/Under 2.5).
+    * BTTS / Ambos Anotan (Sí/No).
+    * Hándicap / Spread principal (línea + precio).
+    * Draw No Bet / Empate No Acción.
+- Si un mercado opcional no está disponible, se reporta "mercado no disponible"
+  y se continúa de forma segura (no se fuerza ningún mercado).
+- Clasificación: NORMAL / IMPORTANTE / DRASTICO y CRITICO (cambio de favorito o
+  lado, flip de Over/Under o BTTS, o movimiento mayor de línea de hándicap).
+- Interpretación Survivor:
+    * 1X2 / ML es el mercado primario.
+    * Over/Under y BTTS son contexto de volatilidad/riesgo.
+    * Hándicap y Draw No Bet son señales de fuerza/contexto.
+
 Reglas operativas (no cambian):
 - NO cierra ni envía un pick de Survivor automáticamente.
 - La decisión final (CERRAR) la controla auditor_pre_cierre.py / Real Data Gate.
 - Disponibilidad: etiquetas CERRAR / ESPERAR / CAMBIAR / NO ENVIAR. El watchdog
   nunca emite CERRAR; como máximo marca READY_FOR_FULL_AUDIT.
-- Movimiento de momios: etiqueta AUDITAR / NO ENVIAR AUTOMÁTICO, nunca CERRAR.
+- Movimiento de momios (cualquier mercado): etiqueta AUDITAR / NO ENVIAR
+  AUTOMÁTICO, nunca CERRAR.
 """
 from __future__ import annotations
 
@@ -110,15 +126,50 @@ WD_READY = "READY_FOR_FULL_AUDIT"
 MOV_NORMAL = "NORMAL"
 MOV_IMPORTANTE = "IMPORTANTE"
 MOV_DRASTICO = "DRASTICO"
+MOV_CRITICO = "CRITICO"
 
 UMBRAL_IMPORTANTE = 5.0   # >= 5 pts
 UMBRAL_DRASTICO = 8.0     # >= 8 pts
 MATERIAL_WORSEN_PTS = 3.0  # cuánto debe empeorar para re-alertar el mismo movimiento
+UMBRAL_LINEA_HANDICAP = 0.5  # movimiento mayor de línea de hándicap (medio gol)
 
-SEVERIDAD = {MOV_NORMAL: 0, MOV_IMPORTANTE: 1, MOV_DRASTICO: 2}
+LINEA_TOTALS_PREFERIDA = float(os.getenv("ODDS_WATCHDOG_TOTALS_LINE", "2.5"))
+
+SEVERIDAD = {MOV_NORMAL: 0, MOV_IMPORTANTE: 1, MOV_DRASTICO: 2, MOV_CRITICO: 3}
 
 EMPATE_NOMBRES = {"draw", "empate", "tie", "x", "tablas"}
+OVER_NOMBRES = {"over", "mas", "más", "alta"}
+UNDER_NOMBRES = {"under", "menos", "baja"}
+SI_NOMBRES = {"yes", "si", "sí"}
+NO_NOMBRES = {"no"}
+
 ETIQUETA_FAVORITO = {"home": "Local", "draw": "Empate", "away": "Visitante"}
+ETIQUETA_LADO = {
+    "home": "Local",
+    "draw": "Empate",
+    "away": "Visitante",
+    "over": "Over",
+    "under": "Under",
+    "yes": "Sí",
+    "no": "No",
+}
+ETIQUETA_MERCADO = {
+    "1x2": "1X2 / Moneyline",
+    "totals": "Over/Under",
+    "btts": "BTTS / Ambos Anotan",
+    "spreads": "Hándicap / Spread",
+    "dnb": "Draw No Bet / Empate No Acción",
+}
+# Mercados opcionales (secundarios). 1X2 es el primario.
+MERCADOS_OPCIONALES = ["totals", "btts", "spreads", "dnb"]
+# Campo que indica el "lado favorito" de cada mercado.
+CAMPO_LADO = {
+    "1x2": "favorito",
+    "totals": "lado",
+    "btts": "lado",
+    "spreads": "favorito",
+    "dnb": "favorito",
+}
 
 
 # ---------------------------------------------------------------------------
@@ -138,6 +189,29 @@ def _coincide_equipo(a: str, b: str) -> bool:
 
 def _es_empate(nombre: str) -> bool:
     return _norm(nombre) in EMPATE_NOMBRES
+
+
+def _es_over(nombre: str) -> bool:
+    return _norm(nombre) in OVER_NOMBRES
+
+
+def _es_under(nombre: str) -> bool:
+    return _norm(nombre) in UNDER_NOMBRES
+
+
+def _es_si(nombre: str) -> bool:
+    return _norm(nombre) in SI_NOMBRES
+
+
+def _es_no(nombre: str) -> bool:
+    return _norm(nombre) in NO_NOMBRES
+
+
+def _promedio(valores: List[float]) -> Optional[float]:
+    valores = [v for v in valores if isinstance(v, (int, float))]
+    if not valores:
+        return None
+    return sum(valores) / len(valores)
 
 
 def clave_partido(home: str, away: str) -> str:
@@ -627,6 +701,570 @@ def construir_mensaje_movimiento(movimientos_tel: List[Dict[str, Any]], hay_flip
 
 
 # ---------------------------------------------------------------------------
+# Multi-mercado (v1.34.0) — lógica pura.
+# ---------------------------------------------------------------------------
+def prob_dos_vias(odd_a: Any, odd_b: Any) -> Optional[Tuple[float, float]]:
+    """Convierte dos momios decimales a probabilidad implícita normalizada (sin vig)."""
+    try:
+        a = float(odd_a)
+        b = float(odd_b)
+    except (TypeError, ValueError):
+        return None
+
+    if a <= 0 or b <= 0:
+        return None
+
+    ia, ib = 1.0 / a, 1.0 / b
+    suma = ia + ib
+    if suma <= 0:
+        return None
+
+    return (ia / suma) * 100.0, (ib / suma) * 100.0
+
+
+def extraer_totals_de_bookmakers(
+    bookmakers: List[Dict[str, Any]],
+    linea: float = LINEA_TOTALS_PREFERIDA,
+) -> Optional[Dict[str, Any]]:
+    """
+    Extrae Over/Under promediando bookmakers. Prefiere la línea indicada
+    (p. ej. 2.5); si no existe, usa la línea más cercana disponible.
+    """
+    por_linea: Dict[float, Dict[str, List[float]]] = {}
+
+    for book in bookmakers or []:
+        if not isinstance(book, dict):
+            continue
+        for market in book.get("markets", []) or []:
+            if not isinstance(market, dict) or market.get("key") != "totals":
+                continue
+
+            tmp: Dict[float, Dict[str, float]] = {}
+            for outcome in market.get("outcomes", []) or []:
+                if not isinstance(outcome, dict):
+                    continue
+                price = outcome.get("price")
+                point = outcome.get("point")
+                if price is None or point is None:
+                    continue
+                try:
+                    price = float(price)
+                    point = float(point)
+                except (TypeError, ValueError):
+                    continue
+                nombre = str(outcome.get("name", ""))
+                slot = tmp.setdefault(point, {})
+                if _es_over(nombre):
+                    slot["over"] = price
+                elif _es_under(nombre):
+                    slot["under"] = price
+
+            for point, vals in tmp.items():
+                if "over" in vals and "under" in vals:
+                    d = por_linea.setdefault(point, {"over": [], "under": []})
+                    d["over"].append(vals["over"])
+                    d["under"].append(vals["under"])
+
+    if not por_linea:
+        return None
+
+    if linea in por_linea:
+        usado = linea
+    else:
+        usado = min(por_linea, key=lambda p: (abs(p - linea), -len(por_linea[p]["over"])))
+
+    over = _promedio(por_linea[usado]["over"])
+    under = _promedio(por_linea[usado]["under"])
+    if over is None or under is None:
+        return None
+
+    return {"point": usado, "odds": {"over": over, "under": under}}
+
+
+def extraer_btts_de_bookmakers(bookmakers: List[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+    """Extrae BTTS (Sí/No) promediando bookmakers."""
+    yes: List[float] = []
+    no: List[float] = []
+
+    for book in bookmakers or []:
+        if not isinstance(book, dict):
+            continue
+        for market in book.get("markets", []) or []:
+            if not isinstance(market, dict) or market.get("key") not in {"btts", "both_teams_to_score"}:
+                continue
+            y = n = None
+            for outcome in market.get("outcomes", []) or []:
+                if not isinstance(outcome, dict):
+                    continue
+                price = outcome.get("price")
+                if price is None:
+                    continue
+                try:
+                    price = float(price)
+                except (TypeError, ValueError):
+                    continue
+                nombre = str(outcome.get("name", ""))
+                if _es_si(nombre):
+                    y = price
+                elif _es_no(nombre):
+                    n = price
+            if y and n:
+                yes.append(y)
+                no.append(n)
+
+    y = _promedio(yes)
+    n = _promedio(no)
+    if y is None or n is None:
+        return None
+
+    return {"odds": {"yes": y, "no": n}}
+
+
+def extraer_spread_de_bookmakers(
+    bookmakers: List[Dict[str, Any]],
+    home_name: str,
+    away_name: str,
+) -> Optional[Dict[str, Any]]:
+    """Extrae el hándicap/spread principal (línea del local + precios)."""
+    h_prices: List[float] = []
+    a_prices: List[float] = []
+    h_points: List[float] = []
+
+    for book in bookmakers or []:
+        if not isinstance(book, dict):
+            continue
+        for market in book.get("markets", []) or []:
+            if not isinstance(market, dict) or market.get("key") not in {"spreads", "handicap"}:
+                continue
+            h = a = None
+            hp = None
+            for outcome in market.get("outcomes", []) or []:
+                if not isinstance(outcome, dict):
+                    continue
+                price = outcome.get("price")
+                if price is None:
+                    continue
+                try:
+                    price = float(price)
+                except (TypeError, ValueError):
+                    continue
+                nombre = str(outcome.get("name", ""))
+                if _coincide_equipo(nombre, home_name):
+                    h = price
+                    hp = outcome.get("point")
+                elif _coincide_equipo(nombre, away_name):
+                    a = price
+            if h and a:
+                h_prices.append(h)
+                a_prices.append(a)
+                if hp is not None:
+                    try:
+                        h_points.append(float(hp))
+                    except (TypeError, ValueError):
+                        pass
+
+    hp_avg = _promedio(h_prices)
+    ap_avg = _promedio(a_prices)
+    if hp_avg is None or ap_avg is None:
+        return None
+
+    point = _promedio(h_points)
+    return {"point": point, "odds": {"home": hp_avg, "away": ap_avg}}
+
+
+def extraer_dnb_de_bookmakers(
+    bookmakers: List[Dict[str, Any]],
+    home_name: str,
+    away_name: str,
+) -> Optional[Dict[str, Any]]:
+    """Extrae Draw No Bet / Empate No Acción (2 vías: local/visitante)."""
+    h_prices: List[float] = []
+    a_prices: List[float] = []
+
+    for book in bookmakers or []:
+        if not isinstance(book, dict):
+            continue
+        for market in book.get("markets", []) or []:
+            if not isinstance(market, dict) or market.get("key") not in {"draw_no_bet", "dnb"}:
+                continue
+            h = a = None
+            for outcome in market.get("outcomes", []) or []:
+                if not isinstance(outcome, dict):
+                    continue
+                price = outcome.get("price")
+                if price is None:
+                    continue
+                try:
+                    price = float(price)
+                except (TypeError, ValueError):
+                    continue
+                nombre = str(outcome.get("name", ""))
+                if _es_empate(nombre):
+                    continue  # DNB no debería traer empate; por seguridad lo ignoramos
+                if _coincide_equipo(nombre, home_name):
+                    h = price
+                elif _coincide_equipo(nombre, away_name):
+                    a = price
+            if h and a:
+                h_prices.append(h)
+                a_prices.append(a)
+
+    h = _promedio(h_prices)
+    a = _promedio(a_prices)
+    if h is None or a is None:
+        return None
+
+    return {"odds": {"home": h, "away": a}}
+
+
+def _mercado_dos_vias(odds: Dict[str, float], k1: str, k2: str) -> Optional[Dict[str, Any]]:
+    pr = prob_dos_vias(odds.get(k1), odds.get(k2))
+    if pr is None:
+        return None
+    prob = {k1: round(pr[0], 2), k2: round(pr[1], 2)}
+    return {
+        "odds": {k1: round(float(odds[k1]), 4), k2: round(float(odds[k2]), 4)},
+        "prob": prob,
+        "lado": favorito_de_prob(prob),
+    }
+
+
+def snapshot_partido_multi(
+    home: str,
+    away: str,
+    bookmakers: List[Dict[str, Any]],
+    linea_totals: float = LINEA_TOTALS_PREFERIDA,
+) -> Optional[Dict[str, Any]]:
+    """
+    Construye el snapshot multi-mercado de un partido. Solo incluye los mercados
+    que The Odds API publica; los ausentes simplemente no aparecen.
+    """
+    mercados: Dict[str, Any] = {}
+
+    # 1X2 / Moneyline (primario).
+    o1 = extraer_1x2_de_bookmakers(bookmakers, home, away)
+    if o1:
+        prob = odds_a_prob_implicita(o1["home"], o1["draw"], o1["away"])
+        if prob:
+            mercados["1x2"] = {
+                "odds": {k: round(v, 4) for k, v in o1.items()},
+                "prob": {k: round(v, 2) for k, v in prob.items()},
+                "favorito": favorito_de_prob(prob),
+            }
+
+    # Totals / Over-Under (contexto de volatilidad).
+    t = extraer_totals_de_bookmakers(bookmakers, linea_totals)
+    if t:
+        m = _mercado_dos_vias(t["odds"], "over", "under")
+        if m:
+            m["point"] = t["point"]
+            mercados["totals"] = m
+
+    # BTTS / Ambos Anotan (contexto de volatilidad).
+    b = extraer_btts_de_bookmakers(bookmakers)
+    if b:
+        m = _mercado_dos_vias(b["odds"], "yes", "no")
+        if m:
+            mercados["btts"] = m
+
+    # Hándicap / Spread (fuerza/contexto).
+    sp = extraer_spread_de_bookmakers(bookmakers, home, away)
+    if sp:
+        m = _mercado_dos_vias(sp["odds"], "home", "away")
+        if m:
+            m["favorito"] = m.pop("lado")
+            m["point"] = sp["point"]
+            mercados["spreads"] = m
+
+    # Draw No Bet / Empate No Acción (fuerza/contexto, secundario).
+    dnb = extraer_dnb_de_bookmakers(bookmakers, home, away)
+    if dnb:
+        m = _mercado_dos_vias(dnb["odds"], "home", "away")
+        if m:
+            m["favorito"] = m.pop("lado")
+            mercados["dnb"] = m
+
+    if not mercados:
+        return None
+
+    return {"partido": f"{home} vs {away}", "mercados": mercados}
+
+
+def construir_snapshot_multi(
+    partidos: List[Dict[str, Any]],
+    eventos: Optional[List[Dict[str, Any]]] = None,
+    linea_totals: float = LINEA_TOTALS_PREFERIDA,
+) -> Dict[str, Any]:
+    """
+    Construye el snapshot multi-mercado de la jornada.
+
+    - Si `eventos` viene (consulta en vivo), usa la respuesta RAW de The Odds API
+      (con todas las market keys), sin modificar jornadas.json.
+    - Si no, usa los bookmakers guardados en jornadas.json (solo partidos con
+      mercado real). En producción esos bookmakers pueden venir normalizados, por
+      lo que los mercados opcionales pueden reportarse como no disponibles.
+    """
+    snap: Dict[str, Any] = {}
+
+    for partido in partidos:
+        home = nombre_local(partido)
+        away = nombre_visitante(partido)
+
+        if eventos is not None:
+            if evento_coincide is None:
+                continue
+            match = next((e for e in eventos if evento_coincide(partido, e)), None)
+            if match is None:
+                continue
+            bookmakers = match.get("bookmakers", [])  # RAW: conserva todas las keys
+        else:
+            if not es_mercado_real(partido):
+                continue
+            bookmakers = partido.get("bookmakers", [])
+
+        sp = snapshot_partido_multi(home, away, bookmakers, linea_totals)
+        if sp is None:
+            continue
+
+        snap[clave_partido(home, away)] = sp
+
+    return snap
+
+
+def resumen_disponibilidad_mercados(cur_snap: Dict[str, Any]) -> Dict[str, int]:
+    """Cuenta en cuántos partidos está disponible cada mercado."""
+    counts: Dict[str, int] = {"1x2": 0, "totals": 0, "btts": 0, "spreads": 0, "dnb": 0}
+    for s in cur_snap.values():
+        for mercado in s.get("mercados", {}):
+            counts[mercado] = counts.get(mercado, 0) + 1
+    return counts
+
+
+def evaluar_movimiento_mercado(mercado: str, base_m: Dict[str, Any], cur_m: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Compara dos snapshots de un mismo mercado y describe el movimiento.
+
+    CRITICO si hay flip de favorito/lado o (en hándicap) movimiento mayor de línea.
+    """
+    base_prob = base_m.get("prob", {}) or {}
+    cur_prob = cur_m.get("prob", {}) or {}
+
+    claves = set(base_prob) | set(cur_prob)
+    deltas: Dict[str, float] = {}
+    for k in claves:
+        try:
+            deltas[k] = abs(float(cur_prob.get(k, 0.0)) - float(base_prob.get(k, 0.0)))
+        except (TypeError, ValueError):
+            deltas[k] = 0.0
+
+    max_delta = max(deltas.values()) if deltas else 0.0
+    clasif = clasificar_movimiento(max_delta)
+
+    campo = CAMPO_LADO.get(mercado, "favorito")
+    lado_prev = base_m.get(campo)
+    lado_cur = cur_m.get(campo)
+    flip = lado_prev is not None and lado_cur is not None and lado_prev != lado_cur
+
+    linea_prev = base_m.get("point")
+    linea_cur = cur_m.get("point")
+    linea_move = None
+    if linea_prev is not None and linea_cur is not None:
+        try:
+            linea_move = abs(float(linea_cur) - float(linea_prev))
+        except (TypeError, ValueError):
+            linea_move = None
+
+    # Hándicap: movimiento mayor de línea => CRITICO.
+    if mercado == "spreads" and linea_move is not None and linea_move >= UMBRAL_LINEA_HANDICAP:
+        clasif = MOV_CRITICO
+
+    # Flip de favorito/lado en cualquier mercado => CRITICO.
+    if flip:
+        clasif = MOV_CRITICO
+
+    return {
+        "mercado": mercado,
+        "max_delta_pts": max_delta,
+        "deltas": deltas,
+        "clasificacion": clasif,
+        "flip": flip,
+        "lado_prev": lado_prev,
+        "lado_cur": lado_cur,
+        "linea_prev": linea_prev,
+        "linea_cur": linea_cur,
+        "linea_move": linea_move,
+    }
+
+
+def decidir_alerta_mercado(
+    mov: Dict[str, Any],
+    prev_alerta: Optional[Dict[str, Any]],
+    incluir_importante: bool = False,
+) -> Tuple[bool, Optional[str]]:
+    """
+    Decide si un movimiento de mercado amerita Telegram, con anti-duplicado.
+    Devuelve (enviar_telegram, tipo_alerta in {DRASTICO, CRITICO, IMPORTANTE, None}).
+    """
+    clasif = mov.get("clasificacion", MOV_NORMAL)
+    flip = bool(mov.get("flip"))
+
+    worthy = clasif in (MOV_DRASTICO, MOV_CRITICO) or (incluir_importante and clasif == MOV_IMPORTANTE)
+    if not worthy:
+        return False, None
+
+    tipo = clasif
+
+    if not prev_alerta:
+        return True, tipo
+
+    prev_clasif = prev_alerta.get("clasificacion", MOV_NORMAL)
+    prev_delta = float(prev_alerta.get("max_delta_pts", 0.0) or 0.0)
+    prev_lado = prev_alerta.get("lado_cur")
+    prev_linea = prev_alerta.get("linea_cur")
+
+    # Flip hacia un lado distinto al ya alertado -> siempre se envía.
+    if flip and prev_lado != mov.get("lado_cur"):
+        return True, MOV_CRITICO
+
+    # Escaló la severidad respecto a lo último alertado.
+    if SEVERIDAD.get(clasif, 0) > SEVERIDAD.get(prev_clasif, 0):
+        return True, tipo
+
+    # Misma severidad pero el movimiento de probabilidad empeoró materialmente.
+    if float(mov.get("max_delta_pts", 0.0)) >= prev_delta + MATERIAL_WORSEN_PTS:
+        return True, tipo
+
+    # Hándicap: nueva línea que se movió materialmente respecto a la ya alertada.
+    if (
+        mov.get("linea_cur") is not None
+        and prev_linea is not None
+    ):
+        try:
+            if abs(float(mov["linea_cur"]) - float(prev_linea)) >= UMBRAL_LINEA_HANDICAP:
+                return True, tipo
+        except (TypeError, ValueError):
+            pass
+
+    # Mismo movimiento, sin empeorar -> duplicado, se suprime.
+    return False, None
+
+
+def evaluar_movimientos_multi(
+    prev_baseline: Optional[Dict[str, Any]],
+    prev_alertas: Optional[Dict[str, Any]],
+    cur_snap: Dict[str, Any],
+    incluir_importante: bool = False,
+) -> Tuple[Dict[str, Any], Dict[str, Any], List[Dict[str, Any]]]:
+    """
+    Compara el snapshot multi-mercado actual contra el baseline previo.
+
+    Devuelve (nuevo_baseline, nuevo_alertas, movimientos).
+    - nuevo_baseline: snapshots actuales por partido (comparación consecutiva).
+    - nuevo_alertas: anti-duplicado por partido -> por mercado.
+    - movimientos: lista evaluada (cada item es un movimiento por mercado).
+    """
+    prev_baseline = dict(prev_baseline) if isinstance(prev_baseline, dict) else {}
+    prev_alertas = dict(prev_alertas) if isinstance(prev_alertas, dict) else {}
+
+    nuevo_baseline: Dict[str, Any] = {}
+    nuevo_alertas: Dict[str, Any] = {}
+    movimientos: List[Dict[str, Any]] = []
+
+    for key, cur in cur_snap.items():
+        nuevo_baseline[key] = cur  # siempre guardamos el snapshot actual
+
+        base = prev_baseline.get(key)
+        if not base or not base.get("mercados"):
+            continue  # primera observación del partido
+
+        cur_mercados = cur.get("mercados", {})
+        base_mercados = base.get("mercados", {})
+        prev_alertas_partido = prev_alertas.get(key, {}) if isinstance(prev_alertas.get(key), dict) else {}
+        alertas_partido: Dict[str, Any] = {}
+
+        for mercado, cur_m in cur_mercados.items():
+            base_m = base_mercados.get(mercado)
+            if not base_m:
+                continue  # mercado recién disponible: no hay con qué comparar
+
+            mov = evaluar_movimiento_mercado(mercado, base_m, cur_m)
+            mov["partido"] = cur.get("partido", key)
+
+            prev_alerta_m = prev_alertas_partido.get(mercado)
+            enviar, tipo = decidir_alerta_mercado(mov, prev_alerta_m, incluir_importante)
+            mov["telegram"] = enviar
+            mov["tipo_alerta"] = tipo
+            movimientos.append(mov)
+
+            if enviar:
+                alertas_partido[mercado] = {
+                    "clasificacion": mov["clasificacion"],
+                    "max_delta_pts": mov["max_delta_pts"],
+                    "lado_cur": mov["lado_cur"],
+                    "linea_cur": mov["linea_cur"],
+                    "alerta_en": datetime.now().isoformat(timespec="seconds"),
+                }
+            elif mov["clasificacion"] == MOV_NORMAL and not mov["flip"]:
+                # Estabilizado: no conservamos registro (futuro movimiento = nuevo).
+                pass
+            elif mercado in prev_alertas_partido:
+                # Movimiento elevado ya alertado/no-Telegram: conservamos registro.
+                alertas_partido[mercado] = prev_alertas_partido[mercado]
+
+        if alertas_partido:
+            nuevo_alertas[key] = alertas_partido
+
+    return nuevo_baseline, nuevo_alertas, movimientos
+
+
+def construir_mensaje_multi(movimientos_tel: List[Dict[str, Any]]) -> str:
+    cabecera = "📊 WATCHDOG MULTI-MERCADO — SURVIVOR LIGA MX"
+    hay_critico = any(m.get("clasificacion") == MOV_CRITICO for m in movimientos_tel)
+    titulo = "🛑 MOVIMIENTO CRÍTICO MULTI-MERCADO" if hay_critico else "🚨 MOVIMIENTO DRÁSTICO MULTI-MERCADO"
+
+    lineas = [
+        cabecera,
+        "=" * 40,
+        titulo,
+        "",
+        f"Etiqueta operativa: {OP_AUDITAR}",
+        "",
+    ]
+
+    # Agrupamos por partido para legibilidad.
+    por_partido: Dict[str, List[Dict[str, Any]]] = {}
+    for m in movimientos_tel:
+        por_partido.setdefault(m.get("partido", "?"), []).append(m)
+
+    for partido, movs in por_partido.items():
+        lineas.append(f"• {partido}")
+        for m in movs:
+            etq = ETIQUETA_MERCADO.get(m["mercado"], m["mercado"])
+            linea = f"   - {etq}: {m['clasificacion']} (Δ {m['max_delta_pts']:.1f} pts prob.)"
+            if m.get("flip"):
+                prev = ETIQUETA_LADO.get(m.get("lado_prev"), m.get("lado_prev"))
+                cur = ETIQUETA_LADO.get(m.get("lado_cur"), m.get("lado_cur"))
+                linea += f" | FLIP {prev}->{cur}"
+            if m["mercado"] == "spreads" and m.get("linea_move"):
+                linea += f" | línea {m.get('linea_prev')}->{m.get('linea_cur')}"
+            lineas.append(linea)
+
+    lineas += [
+        "",
+        "Interpretación Survivor:",
+        "- 1X2 / ML: mercado primario.",
+        "- Over/Under y BTTS: contexto de volatilidad/riesgo.",
+        "- Hándicap y Draw No Bet: señales de fuerza/contexto.",
+        "",
+        "Acción: AUDITAR manualmente. NO se envía pick automático.",
+        "La decisión final (CERRAR) la controla auditor_pre_cierre.py / Real Data Gate.",
+        f"Generado: {datetime.now().isoformat(timespec='seconds')}",
+    ]
+
+    return "\n".join(lineas)
+
+
+# ---------------------------------------------------------------------------
 # Efectos secundarios: estado local, reporte, Telegram, API.
 # ---------------------------------------------------------------------------
 def cargar_estado_previo() -> Dict[str, Any]:
@@ -655,6 +1293,8 @@ def escribir_reporte(
     alerta_enviada: bool,
     movimientos: Optional[List[Dict[str, Any]]] = None,
     movimiento_enviado: bool = False,
+    resumen_mercados: Optional[Dict[str, int]] = None,
+    partidos_con_snapshot: int = 0,
 ) -> None:
     OUTPUT_TXT.parent.mkdir(parents=True, exist_ok=True)
 
@@ -675,18 +1315,37 @@ def escribir_reporte(
         f"({'enviada' if alerta_enviada else 'no enviada'})",
     ]
 
+    # Disponibilidad de mercados (1X2 primario; opcionales secundarios).
     lineas.append("")
-    lineas.append("Movimiento de momios (1X2):")
+    lineas.append("Disponibilidad de mercados:")
+    if resumen_mercados:
+        lineas.append(f"- 1X2 / Moneyline (primario): {resumen_mercados.get('1x2', 0)}/{partidos_con_snapshot}")
+        for mk in MERCADOS_OPCIONALES:
+            n = resumen_mercados.get(mk, 0)
+            etq = ETIQUETA_MERCADO.get(mk, mk)
+            if n > 0:
+                lineas.append(f"- {etq}: {n}/{partidos_con_snapshot}")
+            else:
+                lineas.append(f"- {etq}: mercado no disponible")
+    else:
+        lineas.append("- Sin mercado real / sin snapshot; no se evalúan mercados opcionales.")
+
+    # Movimiento multi-mercado.
+    lineas.append("")
+    lineas.append("Movimiento de mercados:")
     if movimientos:
         for m in movimientos:
+            etq = ETIQUETA_MERCADO.get(m["mercado"], m["mercado"])
             extra = ""
-            if m.get("favorito_flip"):
-                prev = ETIQUETA_FAVORITO.get(m.get("favorito_prev"), m.get("favorito_prev"))
-                cur = ETIQUETA_FAVORITO.get(m.get("favorito_cur"), m.get("favorito_cur"))
-                extra = f" | FAVORITO {prev}->{cur}"
+            if m.get("flip"):
+                prev = ETIQUETA_LADO.get(m.get("lado_prev"), m.get("lado_prev"))
+                cur = ETIQUETA_LADO.get(m.get("lado_cur"), m.get("lado_cur"))
+                extra += f" | FLIP {prev}->{cur}"
+            if m["mercado"] == "spreads" and m.get("linea_move"):
+                extra += f" | línea {m.get('linea_prev')}->{m.get('linea_cur')}"
             tg = " | TELEGRAM" if m.get("telegram") else ""
             lineas.append(
-                f"- {m['partido']}: {m['clasificacion']} "
+                f"- {m['partido']} [{etq}]: {m['clasificacion']} "
                 f"(Δ {m['max_delta_pts']:.1f} pts){extra}{tg}"
             )
         lineas.append(
@@ -700,6 +1359,8 @@ def escribir_reporte(
         "",
         "Notas:",
         "- El watchdog NO cierra ni envía picks automáticamente.",
+        "- 1X2/ML es el mercado primario; O/U y BTTS son contexto de volatilidad;",
+        "  hándicap y Draw No Bet son señales de fuerza/contexto.",
         "- La decisión final (CERRAR) la controla auditor_pre_cierre.py / Real Data Gate.",
         "- Sin mercado real, la decisión operativa es ESPERAR / NO ENVIAR.",
     ]
@@ -811,6 +1472,12 @@ def main() -> int:
         help="También envía Telegram para movimientos IMPORTANTES (5-8 pts).",
     )
     parser.add_argument(
+        "--totals-line",
+        type=float,
+        default=LINEA_TOTALS_PREFERIDA,
+        help=f"Línea preferida de Over/Under a monitorear (default {LINEA_TOTALS_PREFERIDA}).",
+    )
+    parser.add_argument(
         "--cooldown",
         type=int,
         default=DEFAULT_COOLDOWN_MIN,
@@ -820,7 +1487,7 @@ def main() -> int:
 
     incluir_importante = args.telegram_importante or TELEGRAM_IMPORTANTE_ENV
 
-    print("🐶 MARKET WATCHDOG — SURVIVOR LIGA MX (v1.33.0)")
+    print("🐶 MARKET WATCHDOG — SURVIVOR LIGA MX (v1.34.0)")
     print("=" * 60)
 
     data = cargar_json(JORNADAS_PATH, [])
@@ -853,8 +1520,8 @@ def main() -> int:
     previo = cargar_estado_previo()
     prev_disponibles = int(previo.get("disponibles", 0) or 0)
     prev_estado = str(previo.get("disponibilidad", ST_NINGUNO) or ST_NINGUNO)
-    prev_baseline = previo.get("odds_baseline") if isinstance(previo.get("odds_baseline"), dict) else {}
-    prev_alertas = previo.get("odds_alertas") if isinstance(previo.get("odds_alertas"), dict) else {}
+    prev_baseline = previo.get("mercados_baseline") if isinstance(previo.get("mercados_baseline"), dict) else {}
+    prev_alertas = previo.get("mercados_alertas") if isinstance(previo.get("mercados_alertas"), dict) else {}
 
     tipo_alerta = decidir_alerta(prev_disponibles, prev_estado, disponibles, estado)
 
@@ -879,55 +1546,73 @@ def main() -> int:
     else:
         print("🔕 Sin cambios significativos de disponibilidad; no se envía Telegram.")
 
-    # --- Seguimiento de MOVIMIENTO de momios (v1.33.0) ---
+    # --- Seguimiento MULTI-MERCADO (v1.34.0) ---
     movimientos: List[Dict[str, Any]] = []
     movimiento_enviado = False
     nuevo_baseline = prev_baseline
     nuevo_alertas = prev_alertas
+    resumen_mkts: Dict[str, int] = {}
+    n_snapshot = 0
 
     evaluar_mov = (not args.no_movimiento) and disponibles > 0
 
     if evaluar_mov:
-        cur_snap = construir_snapshot(partidos, eventos_live if fuente == "live" else None)
+        cur_snap = construir_snapshot_multi(
+            partidos,
+            eventos_live if fuente == "live" else None,
+            args.totals_line,
+        )
+        resumen_mkts = resumen_disponibilidad_mercados(cur_snap)
+        n_snapshot = len(cur_snap)
 
         if cur_snap:
-            nuevo_baseline, nuevo_alertas, movimientos = evaluar_movimientos(
+            nuevo_baseline, nuevo_alertas, movimientos = evaluar_movimientos_multi(
                 prev_baseline, prev_alertas, cur_snap, incluir_importante
             )
 
+            # Disponibilidad de mercados opcionales (no se fuerza ninguno).
+            print(f"📦 Mercados: 1X2 {resumen_mkts.get('1x2', 0)}/{n_snapshot} (primario)")
+            for mk in MERCADOS_OPCIONALES:
+                n = resumen_mkts.get(mk, 0)
+                etq = ETIQUETA_MERCADO.get(mk, mk)
+                if n > 0:
+                    print(f"   - {etq}: {n}/{n_snapshot}")
+                else:
+                    print(f"   - {etq}: mercado no disponible")
+
             movimientos_tel = [m for m in movimientos if m.get("telegram")]
-            hay_flip = any(m.get("favorito_flip") for m in movimientos_tel)
 
             if movimientos:
-                peor = max(movimientos, key=lambda m: m["max_delta_pts"])
+                peor = max(movimientos, key=lambda m: SEVERIDAD.get(m["clasificacion"], 0))
+                etqp = ETIQUETA_MERCADO.get(peor["mercado"], peor["mercado"])
                 print(
-                    f"📊 Movimiento momios: {len(movimientos)} partidos comparados; "
-                    f"peor Δ {peor['max_delta_pts']:.1f} pts ({peor['clasificacion']})."
+                    f"📊 Movimiento: {len(movimientos)} comparaciones; peor = "
+                    f"{etqp} {peor['clasificacion']} (Δ {peor['max_delta_pts']:.1f} pts)."
                 )
             else:
-                print("📊 Movimiento momios: snapshot inicial guardado (sin baseline previo).")
+                print("📊 Movimiento: snapshot inicial guardado (sin baseline previo).")
 
             if movimientos_tel:
-                mensaje_mov = construir_mensaje_movimiento(movimientos_tel, hay_flip)
+                mensaje_mov = construir_mensaje_multi(movimientos_tel)
                 if args.dry_run or args.no_telegram:
                     print(
-                        f"🔔 Movimiento relevante en {len(movimientos_tel)} partido(s); "
+                        f"🔔 Movimiento relevante en {len(movimientos_tel)} mercado(s); "
                         "Telegram omitido (--dry-run/--no-telegram)."
                     )
                 else:
                     movimiento_enviado, motivo_mov = enviar_telegram(mensaje_mov)
                     if movimiento_enviado:
-                        print(f"📨 Telegram movimiento enviado ({len(movimientos_tel)} partido(s)).")
+                        print(f"📨 Telegram movimiento enviado ({len(movimientos_tel)} mercado(s)).")
                     else:
                         print(f"⚠️ Telegram movimiento no enviado: {motivo_mov}")
             else:
-                print("🔕 Movimiento de momios sin cambios drásticos para Telegram.")
+                print("🔕 Movimiento de mercados sin cambios DRASTICO/CRITICO para Telegram.")
         else:
-            print("📊 Movimiento momios: no se pudo extraer 1X2 (sin datos comparables).")
+            print("📊 Movimiento: no se pudo extraer ningún mercado (sin datos comparables).")
     elif args.no_movimiento:
         print("➡️ Seguimiento de movimiento desactivado (--no-movimiento).")
     else:
-        print("📊 Movimiento momios: sin mercado real (0 disponibles); no se evalúa.")
+        print("📊 Movimiento: sin mercado real (0 disponibles); no se evalúa.")
 
     # --- Persistencia de estado ---
     nuevo_estado = {
@@ -944,8 +1629,8 @@ def main() -> int:
             if alerta_enviada
             else previo.get("ultimo_alerta_en")
         ),
-        "odds_baseline": nuevo_baseline or {},
-        "odds_alertas": nuevo_alertas or {},
+        "mercados_baseline": nuevo_baseline or {},
+        "mercados_alertas": nuevo_alertas or {},
     }
 
     if not args.dry_run:
@@ -961,6 +1646,8 @@ def main() -> int:
             alerta_enviada,
             movimientos,
             movimiento_enviado,
+            resumen_mkts,
+            n_snapshot,
         )
         print(f"✅ Estado guardado: {STATE_PATH}")
         print(f"✅ Reporte: {OUTPUT_TXT}")
