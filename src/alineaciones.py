@@ -29,7 +29,7 @@ REPORTS_DIR = BASE_DIR / "reports"
 
 API_BASE = "https://v3.football.api-sports.io"
 
-DEFAULT_LEAGUE_ID = "45"
+DEFAULT_LEAGUE_ID = "262"
 DEFAULT_SEASON = "2026"
 
 FAILOVER_STATUS_CODES = {500, 502, 503, 504}
