@@ -13,11 +13,12 @@ from __future__ import annotations
 
 import html
 import json
+import os
 import re
 import urllib.parse
 import urllib.request
 import xml.etree.ElementTree as ET
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any, Dict, List
 
@@ -34,6 +35,7 @@ except Exception:
 BASE_DIR = Path(__file__).resolve().parents[1]
 JORNADAS_PATH = BASE_DIR / "data" / "jornadas.json"
 SALIDA_NOTICIAS = BASE_DIR / "data" / "noticias_ligamx.txt"
+NEWS_CACHE_MINUTES = int(os.getenv("NEWS_CACHE_MINUTES", "60"))
 
 
 LOCAL_KEYS = ["local", "equipo_local", "home", "home_team", "casa"]
@@ -141,9 +143,60 @@ def construir_queries(local: str, visitante: str) -> List[str]:
     return base + extra
 
 
+def noticias_cache_fresco(max_minutes: int = NEWS_CACHE_MINUTES) -> tuple[bool, str]:
+    if max_minutes <= 0:
+        return False, "Cache desactivado por NEWS_CACHE_MINUTES<=0."
+
+    if not SALIDA_NOTICIAS.exists():
+        return False, "No existe cache de noticias."
+
+    try:
+        texto = SALIDA_NOTICIAS.read_text(encoding="utf-8")
+    except Exception as exc:
+        return False, f"No se pudo leer cache de noticias: {exc}"
+
+    match = re.search(r"^Generado en:\s*(.+)$", texto, re.MULTILINE)
+    if not match:
+        return False, "Cache sin timestamp 'Generado en'."
+
+    raw_ts = match.group(1).strip()
+
+    try:
+        generado = datetime.fromisoformat(raw_ts)
+    except Exception:
+        return False, f"Timestamp inválido en cache: {raw_ts}"
+
+    edad = datetime.now() - generado
+
+    if edad <= timedelta(minutes=max_minutes):
+        minutos = int(edad.total_seconds() // 60)
+        return (
+            True,
+            f"Cache vigente: generado en {raw_ts}, hace {minutos} min, límite {max_minutes} min.",
+        )
+
+    minutos = int(edad.total_seconds() // 60)
+    return False, f"Cache vencido: generado hace {minutos} min, límite {max_minutes} min."
+
+
 def main() -> int:
     if not JORNADAS_PATH.exists():
         raise SystemExit(f"ERROR: No existe {JORNADAS_PATH}")
+
+    cache_ok, cache_msg = noticias_cache_fresco()
+
+    if cache_ok:
+        print("📰 Usando cache fresco de noticias Liga MX.")
+        print(f"♻️ {cache_msg}")
+        print(f"✅ Archivo cache: {SALIDA_NOTICIAS}")
+        print("➡️ No se consulta Google News RSS en esta corrida.")
+
+        if budget_write_report is not None:
+            budget_write_report()
+
+        return 0
+
+    print(f"🟡 Cache no usable: {cache_msg}")
 
     data = json.loads(JORNADAS_PATH.read_text(encoding="utf-8"))
     partidos = extraer_partidos(data)
