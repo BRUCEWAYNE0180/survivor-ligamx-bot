@@ -250,52 +250,22 @@ def llamar_groq_con_key(label: str, api_key: str, texto_noticias: str) -> Dict[s
 
 def llamar_groq(texto_noticias: str) -> Dict[str, Any]:
     """
-    Envía el texto a GroqCloud y devuelve el JSON parseado.
-    Usa failover técnico solo en errores 5xx o fallas de red/timeout.
-    No rota por 401/403/429.
+    Compatibilidad histórica:
+    - aplicar_noticias_ia.py sigue importando llamar_groq().
+    - Internamente usa ai_provider.llamar_ia().
+    - Groq sigue como proveedor principal.
+    - Gemini solo entra como respaldo por falla técnica real.
+    - No rota por 401/403/429/auth/cuota/rate limit.
     """
-    if Groq is None:
-        raise RuntimeError(
-            "No está instalada la librería 'groq'. Instálala con: pip3 install groq"
-        )
+    try:
+        from ai_provider import llamar_ia
+    except Exception as exc:
+        raise RuntimeError("No se pudo importar ai_provider.py para Multi-IA.") from exc
 
-    keys = groq_key_candidates()
-
-    if not keys:
-        raise RuntimeError(
-            "Falta GROQ_API_KEY_PRIMARY o GROQ_API_KEY. Configúrala antes de ejecutar."
-        )
-
-    last_error: Exception | None = None
-
-    for idx, (label, api_key) in enumerate(keys):
-        try:
-            print(f"🤖 Groq: intentando llave {label}...")
-            resultado = llamar_groq_con_key(label, api_key, texto_noticias)
-            print(f"✅ Groq: análisis exitoso con llave {label}.")
-            return resultado
-
-        except Exception as exc:
-            last_error = exc
-            status = status_code_from_exception(exc)
-
-            if status in FAILOVER_STATUS_CODES or (status is None and es_falla_tecnica_groq(exc)):
-                print(f"⚠️ Groq falla técnica con llave {label}: {type(exc).__name__}")
-
-                if idx < len(keys) - 1:
-                    print("Servidor principal no responde, conectando a nodo de respaldo")
-                    continue
-
-                raise RuntimeError("Groq falló técnicamente y no hay más backup.") from exc
-
-            if status in NO_ROTATE_STATUS_CODES:
-                raise RuntimeError(
-                    f"Groq respondió {status}. No se rota llave por auth/cuota/rate limit."
-                ) from exc
-
-            raise
-
-    raise RuntimeError("No se pudo consultar Groq con ninguna llave.") from last_error
+    return llamar_ia(
+        texto_noticias=texto_noticias,
+        system_prompt=construir_prompt_sistema(),
+    )
 
 def cargar_json_seguro(contenido: str) -> Dict[str, Any]:
     """
@@ -353,6 +323,9 @@ def validar_salida_ia(data: Dict[str, Any]) -> Dict[str, Any]:
         if not isinstance(partidos_afectados, list):
             partidos_afectados = [str(partidos_afectados)]
 
+        if es_falso_positivo_baja_ia(jugador, equipo, partidos_afectados, item):
+            continue
+
         bajas_limpias.append(
             {
                 "jugador": jugador,
@@ -376,6 +349,61 @@ def validar_salida_ia(data: Dict[str, Any]) -> Dict[str, Any]:
         "generado_en": ahora_iso(),
     }
 
+
+
+def es_falso_positivo_baja_ia(
+    jugador: str,
+    equipo: str,
+    partidos_afectados: list[str],
+    item: Dict[str, Any],
+) -> bool:
+    """
+    Evita que la IA convierta noticias genéricas o entrenadores en bajas de jugadores.
+    Regla conservadora: si no hay jugador claro, se descarta.
+    """
+    jugador_norm = jugador.strip().lower()
+    equipo_norm = equipo.strip().lower()
+    detalle_norm = str(item.get("detalle", "")).strip().lower()
+    fuente_norm = str(item.get("fuente_fragmento", "")).strip().lower()
+    partidos_norm = " ".join(str(p).strip().lower() for p in partidos_afectados)
+
+    texto = " ".join([jugador_norm, equipo_norm, detalle_norm, fuente_norm, partidos_norm])
+
+    nombres_no_jugadores = {
+        "miguel herrera",
+        "piojo herrera",
+        "director técnico",
+        "director tecnico",
+        "entrenador",
+        "dt",
+    }
+
+    if jugador_norm in nombres_no_jugadores:
+        return True
+
+    if "herrera" in jugador_norm and ("entrenador" in texto or "director técnico" in texto or "director tecnico" in texto or "dt" in texto):
+        return True
+
+    frases_genericas = (
+        "15 bajas",
+        "bajas para el torneo",
+        "modificación a su plantilla",
+        "modificacion a su plantilla",
+        "plantilla de cara",
+        "apertura 2026",
+        "clausura 2026",
+    )
+
+    if any(frase in texto for frase in frases_genericas) and not fuente_norm:
+        return True
+
+    if any(frase in texto for frase in frases_genericas) and partidos_norm in {"apertura 2026", "clausura 2026"}:
+        return True
+
+    if partidos_norm in {"apertura 2026", "clausura 2026", "liga mx"}:
+        return True
+
+    return False
 
 def cargar_jornadas(path: Path = JORNADAS_PATH) -> Any:
     if not path.exists():
