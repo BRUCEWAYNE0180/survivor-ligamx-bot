@@ -1,9 +1,11 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
+import hashlib
 import json
+import os
 import unicodedata
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any, Dict, List, Tuple
 
@@ -24,6 +26,7 @@ JORNADAS_PATH = BASE_DIR / "data" / "jornadas.json"
 NOTICIAS_PATH = BASE_DIR / "data" / "noticias_ligamx.txt"
 SALIDA_BAJAS_PATH = BASE_DIR / "data" / "bajas_ia_ultimo.json"
 SALIDA_REVISION_PATH = BASE_DIR / "data" / "bajas_ia_pendientes_revision.json"
+GROQ_CACHE_MINUTES = int(os.getenv("GROQ_CACHE_MINUTES", "60"))
 
 
 LOCAL_KEYS = ["local", "equipo_local", "home", "home_team", "casa"]
@@ -248,6 +251,104 @@ def aplicar_baja_a_partido(partido: Dict[str, Any], baja: Dict[str, Any]) -> boo
     return False
 
 
+def sha256_texto(texto: str) -> str:
+    return hashlib.sha256(texto.encode("utf-8")).hexdigest()
+
+
+def cache_ia_fresco(
+    texto_noticias: str,
+    max_minutes: int = GROQ_CACHE_MINUTES,
+) -> Tuple[bool, str, Dict[str, Any]]:
+    if max_minutes <= 0:
+        return False, "Cache IA desactivado por GROQ_CACHE_MINUTES<=0.", {}
+
+    if not SALIDA_BAJAS_PATH.exists():
+        return False, "No existe cache IA previo.", {}
+
+    try:
+        resultado = json.loads(SALIDA_BAJAS_PATH.read_text(encoding="utf-8"))
+    except Exception as exc:
+        return False, f"No se pudo leer cache IA: {exc}", {}
+
+    if not isinstance(resultado, dict):
+        return False, "Cache IA inválido: no es objeto JSON.", {}
+
+    if resultado.get("fuente") == "budget_blocked":
+        return False, "Cache IA anterior fue bloqueo de presupuesto; no se reutiliza.", {}
+
+    hash_actual = sha256_texto(texto_noticias)
+    hash_cache = str(resultado.get("noticias_sha256", "")).strip()
+
+    if hash_cache != hash_actual:
+        return False, "Noticias cambiaron o cache IA no tiene hash compatible.", {}
+
+    generado_raw = str(resultado.get("generado_en", "")).strip()
+    if not generado_raw:
+        return False, "Cache IA sin timestamp generado_en.", {}
+
+    try:
+        generado = datetime.fromisoformat(generado_raw)
+    except Exception:
+        return False, f"Cache IA con timestamp inválido: {generado_raw}", {}
+
+    edad = datetime.now() - generado
+    minutos = int(edad.total_seconds() // 60)
+
+    if edad <= timedelta(minutes=max_minutes):
+        return (
+            True,
+            f"Cache IA vigente: generado en {generado_raw}, hace {minutos} min, límite {max_minutes} min.",
+            resultado,
+        )
+
+    return False, f"Cache IA vencido: generado hace {minutos} min, límite {max_minutes} min.", {}
+
+
+def preparar_resultado_ia(
+    resultado_ia: Any,
+    texto_noticias: str,
+    fuente_default: str,
+) -> Dict[str, Any]:
+    if not isinstance(resultado_ia, dict):
+        resultado_ia = {
+            "bajas": [],
+            "pendientes_revision": [],
+            "resumen": "Respuesta IA inválida. No se aplican bajas.",
+            "actualizado_por": "src/aplicar_noticias_ia.py",
+            "fuente": "respuesta_invalida",
+        }
+
+    resultado_ia.setdefault("bajas", [])
+    resultado_ia.setdefault("pendientes_revision", [])
+    resultado_ia.setdefault("actualizado_por", "src/aplicar_noticias_ia.py")
+    resultado_ia.setdefault("fuente", fuente_default)
+    resultado_ia["generado_en"] = datetime.now().isoformat(timespec="seconds")
+    resultado_ia["noticias_sha256"] = sha256_texto(texto_noticias)
+    resultado_ia["groq_cache_minutes"] = GROQ_CACHE_MINUTES
+
+    return resultado_ia
+
+
+def llamar_groq_seguro(texto_noticias: str) -> Dict[str, Any]:
+    try:
+        return llamar_groq(texto_noticias)
+    except Exception as exc:
+        mensaje = str(exc)
+        print(f"⚠️ Groq falló: {type(exc).__name__}")
+        print(f"   Detalle: {mensaje[:500]}")
+        print("➡️ No se aplican bajas nuevas para evitar inventar información.")
+
+        return {
+            "bajas": [],
+            "pendientes_revision": [],
+            "resumen": "Groq falló durante el análisis. No se detectan bajas nuevas sin IA.",
+            "actualizado_por": "src/aplicar_noticias_ia.py",
+            "fuente": "groq_error",
+            "error_tipo": type(exc).__name__,
+            "error_mensaje": mensaje[:1200],
+        }
+
+
 def main() -> int:
     if not JORNADAS_PATH.exists():
         raise SystemExit(f"ERROR: No existe {JORNADAS_PATH}")
@@ -257,41 +358,65 @@ def main() -> int:
 
     texto_noticias = NOTICIAS_PATH.read_text(encoding="utf-8")
 
-    if budget_can_call is not None:
-        permitido, mensaje_budget = budget_can_call(
-            "groq",
-            units=1,
-            min_interval_minutes=0,
-        )
+    cache_ok, cache_msg, resultado_cache = cache_ia_fresco(texto_noticias)
 
-        if not permitido:
-            print(f"⏸️ Groq bloqueado por presupuesto: {mensaje_budget}")
-            print("➡️ No se llama IA. Se deja bajas=0 para evitar inventar información.")
+    if cache_ok:
+        print("🤖 Usando cache fresco de análisis IA Groq.")
+        print(f"♻️ {cache_msg}")
+        print("➡️ No se llama Groq en esta corrida.")
+        resultado_ia = resultado_cache
 
-            resultado_ia = {
-                "bajas": [],
-                "pendientes_revision": [],
-                "resumen": "Groq bloqueado por presupuesto. No se detectan bajas nuevas sin IA.",
-                "actualizado_por": "src/aplicar_noticias_ia.py",
-                "fuente": "budget_blocked",
-            }
+        if budget_write_report is not None:
+            budget_write_report()
 
-            if budget_write_report is not None:
-                budget_write_report()
-        else:
-            resultado_ia = llamar_groq(texto_noticias)
+    else:
+        print(f"🟡 Cache IA no usable: {cache_msg}")
 
-            if budget_record_call is not None:
-                budget_record_call(
-                    "groq",
-                    units=1,
-                    note=f"aplicar_noticias_ia chars={len(texto_noticias)}",
+        if budget_can_call is not None:
+            permitido, mensaje_budget = budget_can_call(
+                "groq",
+                units=1,
+                min_interval_minutes=0,
+            )
+
+            if not permitido:
+                print(f"⏸️ Groq bloqueado por presupuesto: {mensaje_budget}")
+                print("➡️ No se llama IA. Se deja bajas=0 para evitar inventar información.")
+
+                resultado_ia = {
+                    "bajas": [],
+                    "pendientes_revision": [],
+                    "resumen": "Groq bloqueado por presupuesto. No se detectan bajas nuevas sin IA.",
+                    "actualizado_por": "src/aplicar_noticias_ia.py",
+                    "fuente": "budget_blocked",
+                }
+
+                if budget_write_report is not None:
+                    budget_write_report()
+            else:
+                resultado_ia = llamar_groq_seguro(texto_noticias)
+                resultado_ia = preparar_resultado_ia(
+                    resultado_ia,
+                    texto_noticias,
+                    fuente_default="groq",
                 )
 
-            if budget_write_report is not None:
-                budget_write_report()
-    else:
-        resultado_ia = llamar_groq(texto_noticias)
+                if budget_record_call is not None:
+                    budget_record_call(
+                        "groq",
+                        units=1,
+                        note=f"aplicar_noticias_ia chars={len(texto_noticias)}",
+                    )
+
+                if budget_write_report is not None:
+                    budget_write_report()
+        else:
+            resultado_ia = llamar_groq_seguro(texto_noticias)
+            resultado_ia = preparar_resultado_ia(
+                resultado_ia,
+                texto_noticias,
+                fuente_default="groq",
+            )
 
     SALIDA_BAJAS_PATH.write_text(
         json.dumps(resultado_ia, ensure_ascii=False, indent=2) + "\n",
