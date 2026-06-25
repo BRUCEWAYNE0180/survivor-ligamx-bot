@@ -35,7 +35,7 @@ except Exception:
 BASE_DIR = Path(__file__).resolve().parents[1]
 JORNADAS_PATH = BASE_DIR / "data" / "jornadas.json"
 SALIDA_NOTICIAS = BASE_DIR / "data" / "noticias_ligamx.txt"
-NEWS_CACHE_MINUTES = int(os.getenv("NEWS_CACHE_MINUTES", "60"))
+NEWS_CACHE_MINUTES = int(os.getenv("NEWS_CACHE_MINUTES", "360"))
 
 
 LOCAL_KEYS = ["local", "equipo_local", "home", "home_team", "casa"]
