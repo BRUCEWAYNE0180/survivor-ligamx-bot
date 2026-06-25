@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any, Dict
 
@@ -19,6 +20,7 @@ except Exception:
 
 BASE_DIR = Path(__file__).resolve().parents[1]
 JORNADAS_PATH = BASE_DIR / "data" / "jornadas.json"
+CLIMA_CACHE_MINUTES = 60
 
 
 COORDENADAS_ESTADIOS = {
@@ -110,6 +112,27 @@ def obtener_clima_open_meteo(coordenadas: Dict[str, float]) -> Dict[str, Any]:
     }
 
 
+def clima_cache_fresco(partido: Dict[str, Any], max_minutes: int = CLIMA_CACHE_MINUTES) -> bool:
+    clima = partido.get("clima", {})
+
+    if not isinstance(clima, dict):
+        return False
+
+    if not bool(clima.get("real", False)):
+        return False
+
+    actualizado_en = clima.get("actualizado_en")
+    if not actualizado_en:
+        return False
+
+    try:
+        ts = datetime.fromisoformat(str(actualizado_en))
+    except Exception:
+        return False
+
+    return datetime.now() - ts <= timedelta(minutes=max_minutes)
+
+
 def aplicar_clima_fallback(partido: Dict[str, Any], motivo: str) -> None:
     partido["clima_temperatura_c"] = 20.0
     partido["clima_estado"] = "Fallback técnico / clima no disponible"
@@ -120,11 +143,15 @@ def aplicar_clima_fallback(partido: Dict[str, Any], motivo: str) -> None:
         "temperatura_c": 20.0,
         "descripcion": "Fallback técnico / clima no disponible",
         "motivo": motivo,
+        "actualizado_en": datetime.now().isoformat(timespec="seconds"),
         "nota": "No usar clima como señal fuerte.",
     }
 
 
 def aplicar_clima_real(partido: Dict[str, Any], clima: Dict[str, Any]) -> None:
+    clima = dict(clima)
+    clima["actualizado_en"] = datetime.now().isoformat(timespec="seconds")
+
     partido["clima_temperatura_c"] = clima["temperatura_c"]
     partido["clima_estado"] = clima["descripcion"]
     partido["clima_real"] = True
@@ -136,6 +163,7 @@ def obtener_clima_estadios() -> None:
 
     partidos = cargar_jornadas()
     reales = 0
+    cache = 0
     fallback = 0
 
     for partido in partidos:
@@ -147,6 +175,15 @@ def obtener_clima_estadios() -> None:
             print(f"⚠️ Clima fallback para {local}: {motivo}")
             aplicar_clima_fallback(partido, motivo)
             fallback += 1
+            continue
+
+        if clima_cache_fresco(partido):
+            clima = partido.get("clima", {})
+            cache += 1
+            print(
+                f"♻️ {estadio} ({local}): "
+                f"{clima.get('temperatura_c')}°C | {clima.get('descripcion')} | CACHE REAL"
+            )
             continue
 
         if budget_can_call is not None:
@@ -186,6 +223,7 @@ def obtener_clima_estadios() -> None:
 
     print("✅ Bot: Clima procesado en data/jornadas.json")
     print(f"   Real Open-Meteo: {reales}")
+    print(f"   Cache local: {cache}")
     print(f"   Fallback técnico: {fallback}")
     if budget_write_report is not None:
         budget_write_report()
