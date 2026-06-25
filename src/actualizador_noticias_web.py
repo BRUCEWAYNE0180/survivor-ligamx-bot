@@ -21,6 +21,15 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List
 
+try:
+    from api_budget import can_call as budget_can_call
+    from api_budget import record_call as budget_record_call
+    from api_budget import write_report as budget_write_report
+except Exception:
+    budget_can_call = None
+    budget_record_call = None
+    budget_write_report = None
+
 
 BASE_DIR = Path(__file__).resolve().parents[1]
 JORNADAS_PATH = BASE_DIR / "data" / "jornadas.json"
@@ -144,6 +153,8 @@ def main() -> int:
 
     todas_noticias: List[Dict[str, str]] = []
     vistos = set()
+    busquedas_realizadas = 0
+    busquedas_bloqueadas = 0
 
     print("📰 Buscando noticias importantes de Liga MX...")
 
@@ -157,8 +168,29 @@ def main() -> int:
         print(f"🔎 {local} vs {visitante}")
 
         for query in construir_queries(local, visitante):
+            if budget_can_call is not None:
+                permitido, mensaje_budget = budget_can_call(
+                    "google_news_rss",
+                    units=1,
+                    min_interval_minutes=0,
+                )
+
+                if not permitido:
+                    busquedas_bloqueadas += 1
+                    print(f"   ⏸️ Google News RSS bloqueado: {mensaje_budget}")
+                    continue
+
             try:
                 noticias = consultar_google_news(query, max_items=4)
+                busquedas_realizadas += 1
+
+                if budget_record_call is not None:
+                    budget_record_call(
+                        "google_news_rss",
+                        units=1,
+                        note=f"actualizador_noticias_web query={query[:80]}",
+                    )
+
             except Exception as exc:
                 print(f"   ⚠️ Falló query: {query} | {exc}")
                 continue
@@ -177,6 +209,8 @@ def main() -> int:
         f"Generado en: {ahora}",
         "",
         "Objetivo: detectar bajas confirmadas, lesiones, suspensiones, dudas importantes, ruedas de prensa y cambios relevantes.",
+        f"Búsquedas Google News RSS realizadas: {busquedas_realizadas}",
+        f"Búsquedas Google News RSS bloqueadas por budget: {busquedas_bloqueadas}",
         "",
     ]
 
@@ -199,7 +233,12 @@ def main() -> int:
 
     SALIDA_NOTICIAS.write_text("\n".join(lineas) + "\n", encoding="utf-8")
 
+    if budget_write_report is not None:
+        budget_write_report()
+
     print(f"✅ Noticias encontradas: {len(todas_noticias)}")
+    print(f"✅ Búsquedas Google News RSS realizadas: {busquedas_realizadas}")
+    print(f"⚠️ Búsquedas Google News RSS bloqueadas: {busquedas_bloqueadas}")
     print(f"✅ Archivo creado: {SALIDA_NOTICIAS}")
     print("➡️ Siguiente paso: correr src/aplicar_noticias_ia.py")
 
