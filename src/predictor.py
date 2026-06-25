@@ -30,6 +30,8 @@ def calcular_pronosticos_avanzados():
         local = partido['home_team']
         visita = partido['away_team']
         temp_estadio = partido.get('clima_temperatura_c', 20.0)
+        clima_real = bool(partido.get('clima_real', False))
+        clima_label = 'REAL' if clima_real else 'FALLBACK TÉCNICO'
         
         outcomes = partido['bookmakers'][0]['markets'][0]['outcomes']
         cuota_l = next(o['price'] for o in outcomes if o['name'] == local)
@@ -67,7 +69,7 @@ def calcular_pronosticos_avanzados():
         jugadores_v = ESTRELLAS_LIGA_MX.get(visita, ["Jugador Destacado Visitante"])
 
         print("="*65)
-        print(f"⚽ PARTIDO: {local} vs {visita} | Clima Estadio: {temp_estadio}°C")
+        print(f"⚽ PARTIDO: {local} vs {visita} | Clima Estadio: {temp_estadio}°C ({clima_label})")
         print("="*65)
         print(f"📈 PROBABILIDADES: Local: {prob_l*100:.1f}% | Empate: {prob_e*100:.1f}% | Visita: {prob_v*100:.1f}%")
         print(f"🔥 PICK RECOMENDADO: {pick}")
