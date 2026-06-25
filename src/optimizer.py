@@ -55,11 +55,14 @@ def seleccionar_pick_survivor():
         print("🆕 Historial limpio: Todos los equipos de la Liga MX están disponibles.")
         
     print("="*65)
-    print(f"🔥 PICK RECOMENDADO OFICIAL PARA TU SURVIVOR:")
+    print(f"🧪 PICK TÉCNICO / REFERENCIA — NO ENVIAR SIN MERCADO REAL:")
     top_pick = candidatos_survivor[0]
-    print(f"   👉 SELECCIONAR A: {top_pick['equipo']} ({top_pick['condicion']})")
+    print(f"   👉 CANDIDATO TÉCNICO: {top_pick['equipo']} ({top_pick['condicion']})")
     print(f"   ↳ Enfrentando a: {top_pick['rival']}")
     print(f"   ↳ Probabilidad matemática de avanzar de jornada: {top_pick['prob_avance']*100:.1f}%")
+    print("   ⚠️ Estado: REFERENCIA TÉCNICA / NO ENVIAR")
+    print("   ⚠️ Motivo: este módulo puede usar fallback técnico si falta mercado real.")
+    print("   ✅ El cierre real lo decide auditor_pre_cierre.py / Real Data Gate.")
     print("="*65)
     
     print("\n📋 Opciones de respaldo ordenadas por nivel de seguridad:")

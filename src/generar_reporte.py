@@ -84,7 +84,7 @@ def extraer_pick_desde_log(texto: str) -> Dict[str, str]:
         "estado_auditor": "NO DETECTADO",
     }
 
-    m = re.search(r"SELECCIONAR A:\s*(.+)", texto)
+    m = re.search(r"(?:SELECCIONAR A|CANDIDATO TÉCNICO|REFERENCIA TÉCNICA):\s*(.+)", texto)
     if m:
         pick["equipo"] = m.group(1).strip()
 
