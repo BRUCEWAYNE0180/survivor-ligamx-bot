@@ -77,6 +77,7 @@ run_step "Ajustar pick anti-tumba" python3 src/ajustar_pick_survivor.py --main-l
 run_step "Auditor pre-cierre real" python3 src/auditor_pre_cierre.py
 run_step "Lectura de mercado" python3 src/lectura_mercado.py
 run_step "Reporte presupuesto APIs" python3 src/api_budget.py report
+run_step "Estado de mercado sin gastar API" python3 src/market_status.py
 run_step "Generar reporte final" python3 src/generar_reporte.py --main-log "$LOG" --output "$REPORTE"
 
 echo "" | tee -a "$LOG"
