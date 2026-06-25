@@ -175,6 +175,13 @@ def main() -> int:
         salida.extend(pre_cierre_path.read_text(encoding="utf-8", errors="ignore").strip().splitlines())
         salida.append("")
 
+    lectura_mercado_path = BASE_DIR / "reports" / "lectura_mercado_ultimo.txt"
+    if lectura_mercado_path.exists():
+        salida.append("LECTURA DE MERCADO")
+        salida.append("-" * 60)
+        salida.extend(lectura_mercado_path.read_text(encoding="utf-8", errors="ignore").strip().splitlines())
+        salida.append("")
+
     salida.append("SURVIVOR")
     salida.append("-" * 60)
     salida.append(f"Equipos bloqueados: {', '.join(bloqueados) if bloqueados else 'No detectados'}")
