@@ -7,6 +7,15 @@ from typing import Any, Dict
 
 import requests
 
+try:
+    from api_budget import can_call as budget_can_call
+    from api_budget import record_call as budget_record_call
+    from api_budget import write_report as budget_write_report
+except Exception:
+    budget_can_call = None
+    budget_record_call = None
+    budget_write_report = None
+
 
 BASE_DIR = Path(__file__).resolve().parents[1]
 JORNADAS_PATH = BASE_DIR / "data" / "jornadas.json"
@@ -140,10 +149,32 @@ def obtener_clima_estadios() -> None:
             fallback += 1
             continue
 
+        if budget_can_call is not None:
+            permitido, mensaje_budget = budget_can_call(
+                "open_meteo",
+                units=1,
+                min_interval_minutes=0,
+            )
+
+            if not permitido:
+                motivo = f"Open-Meteo bloqueado por presupuesto: {mensaje_budget}"
+                print(f"⚠️ Clima fallback para {local}: {motivo}")
+                aplicar_clima_fallback(partido, motivo)
+                fallback += 1
+                continue
+
         try:
             clima = obtener_clima_open_meteo(COORDENADAS_ESTADIOS[estadio])
             aplicar_clima_real(partido, clima)
             reales += 1
+
+            if budget_record_call is not None:
+                budget_record_call(
+                    "open_meteo",
+                    units=1,
+                    note=f"contexto clima estadio={estadio}",
+                )
+
             print(f"🏟️ {estadio} ({local}): {clima['temperatura_c']}°C | {clima['descripcion']} | REAL")
         except Exception as exc:
             motivo = str(exc)
@@ -156,6 +187,9 @@ def obtener_clima_estadios() -> None:
     print("✅ Bot: Clima procesado en data/jornadas.json")
     print(f"   Real Open-Meteo: {reales}")
     print(f"   Fallback técnico: {fallback}")
+    if budget_write_report is not None:
+        budget_write_report()
+
     if fallback:
         print("⚠️ Nota: clima fallback no debe usarse como señal fuerte.")
 

@@ -9,6 +9,15 @@ from typing import Any, Dict, List, Tuple
 
 from analizador_ia import llamar_groq
 
+try:
+    from api_budget import can_call as budget_can_call
+    from api_budget import record_call as budget_record_call
+    from api_budget import write_report as budget_write_report
+except Exception:
+    budget_can_call = None
+    budget_record_call = None
+    budget_write_report = None
+
 
 BASE_DIR = Path(__file__).resolve().parents[1]
 JORNADAS_PATH = BASE_DIR / "data" / "jornadas.json"
@@ -247,7 +256,42 @@ def main() -> int:
         raise SystemExit(f"ERROR: No existe {NOTICIAS_PATH}")
 
     texto_noticias = NOTICIAS_PATH.read_text(encoding="utf-8")
-    resultado_ia = llamar_groq(texto_noticias)
+
+    if budget_can_call is not None:
+        permitido, mensaje_budget = budget_can_call(
+            "groq",
+            units=1,
+            min_interval_minutes=0,
+        )
+
+        if not permitido:
+            print(f"⏸️ Groq bloqueado por presupuesto: {mensaje_budget}")
+            print("➡️ No se llama IA. Se deja bajas=0 para evitar inventar información.")
+
+            resultado_ia = {
+                "bajas": [],
+                "pendientes_revision": [],
+                "resumen": "Groq bloqueado por presupuesto. No se detectan bajas nuevas sin IA.",
+                "actualizado_por": "src/aplicar_noticias_ia.py",
+                "fuente": "budget_blocked",
+            }
+
+            if budget_write_report is not None:
+                budget_write_report()
+        else:
+            resultado_ia = llamar_groq(texto_noticias)
+
+            if budget_record_call is not None:
+                budget_record_call(
+                    "groq",
+                    units=1,
+                    note=f"aplicar_noticias_ia chars={len(texto_noticias)}",
+                )
+
+            if budget_write_report is not None:
+                budget_write_report()
+    else:
+        resultado_ia = llamar_groq(texto_noticias)
 
     SALIDA_BAJAS_PATH.write_text(
         json.dumps(resultado_ia, ensure_ascii=False, indent=2) + "\n",

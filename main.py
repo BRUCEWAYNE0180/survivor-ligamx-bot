@@ -4,7 +4,7 @@ import os
 # Asegurar que Python pueda encontrar los módulos dentro de la carpeta 'src'
 sys.path.append(os.path.abspath('src'))
 
-from scraper import obtener_datos_casino
+from scraper import obtener_datos_mercado
 from contexto import obtener_clima_estadios
 from predictor import calcular_pronosticos_avanzados
 from optimizer import seleccionar_pick_survivor
@@ -15,7 +15,7 @@ def ejecutar_sistema_completo():
     print("🚀 ======================================================= 🚀\n")
     
     # Paso 1: Obtener estado de mercado / momios
-    obtener_datos_casino()
+    obtener_datos_mercado()
     print("\n------------------------------------------------------------")
     
     # Paso 2: Inyectar Clima de los Estadios
