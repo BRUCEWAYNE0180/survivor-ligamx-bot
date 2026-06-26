@@ -36,3 +36,10 @@ data/fbref/raw/
 data/cache/
 data/*.csv
 *.html
+
+
+# v1.39.0 — Assisted Sportsbook Odds Import (todo local, nunca se commitea)
+data/playwright_assisted_profile/
+reports/caliente_debug_text.txt
+reports/momios_liga_mx.json
+reports/assisted_odds_import_ultimo.txt

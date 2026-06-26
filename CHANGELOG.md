@@ -1,5 +1,48 @@
 # Changelog — Survivor Liga MX Bot
 
+## v1.39.0 — Assisted Sportsbook Odds Import
+
+### Añadido
+- `src/assisted_odds_import.py` + `scripts/assisted_caliente_odds.py`: importación
+  **ASISTIDA POR USUARIO** de momios 1X2 Liga MX desde un sportsbook (probado con
+  Caliente Liga MX). El navegador se abre **visible** (Playwright persistent
+  context); el usuario completa **manualmente** cualquier verificación/login y el
+  script solo lee el **texto visible** tras presionar ENTER.
+  - Parser de eventos con patrón
+    `HH:MM DD Mon Local MOMIO Empate MOMIO Visitante MOMIO`
+    (ej. `19:00 16 Jul Necaxa -125 Empate +260 Atlante +275`). Extrae fecha, hora,
+    equipo_local, equipo_visitante, momio_local, momio_empate y momio_visitante.
+  - Diseño **anti-mezcla**: la clase de nombre de equipo excluye dígitos y signos
+    `+/-` y no cruza saltos de línea; con `re.finditer` cada evento se extrae de
+    forma independiente, así un bloque gigante de DOM no combina partidos
+    (p. ej. no mezcla América/Atlas con Necaxa/Atlante).
+  - Validación de **momios americanos** (`+120`, `-125`, …; magnitud ≥ 100),
+    deduplicación por (local, visitante, fecha, hora) ignorando acentos/mayúsculas,
+    y estado `NO_MATCHES_FOUND` cuando no hay eventos válidos.
+  - Exporta JSON a `reports/momios_liga_mx.json`, guarda el texto de debug en
+    `reports/caliente_debug_text.txt` y genera el reporte
+    `reports/assisted_odds_import_ultimo.txt`. El reporte solo muestra el **host**
+    de la URL (nunca query/llaves) y mantiene la decisión `ESPERAR / NO ENVIAR`.
+  - CLI con `--url` (default Caliente), `--debug-file` (reparsear texto ya
+    capturado sin abrir navegador), `--user-data-dir`, `--esperados` y `--timeout`.
+    Playwright se importa de forma **perezosa** (compila/corre `--help` y tests sin
+    tenerlo instalado).
+- `tests/test_assisted_odds_import.py`: parser con 9 partidos reales del texto de
+  Caliente, no mezcla de pares en bloque gigante, momio inválido descartado,
+  duplicados deduplicados, reporte sin secretos, reporte mantiene
+  `ESPERAR / NO ENVIAR`, y garantías sobre el código fuente (no stealth, no proxy,
+  no automatiza login, no Telegram, no cambia picks, navegador visible).
+- `.gitignore` ampliado: nunca se commitean el perfil persistente de Playwright,
+  `reports/caliente_debug_text.txt`, `reports/momios_liga_mx.json` ni
+  `reports/assisted_odds_import_ultimo.txt`.
+
+### Sin cambios (restricciones respetadas)
+- **NO** stealth, **NO** playwright-stealth, **NO** proxy, **NO** bypass de
+  firewall/captcha/login/verificación, **NO** automatiza login, **NO** guarda
+  credenciales, **NO** imprime secretos.
+- **NO** manda Telegram, **NO** cambia/cierra picks, **NO** usa cierre operativo.
+- Decisión general siempre `ESPERAR / NO ENVIAR`. Nunca marca un pick listo.
+
 ## v1.38.0 — Pre-Match Recheck Scheduler
 
 ### Añadido
