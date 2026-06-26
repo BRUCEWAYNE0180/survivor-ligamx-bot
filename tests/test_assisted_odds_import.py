@@ -478,6 +478,432 @@ class TestExportJSON(unittest.TestCase):
 
 
 # ===========================================================================
+# Tests REAL LAYOUT (v1.39.2 — tokens de layout real de Caliente)
+# ===========================================================================
+
+# Fixture inline con layout tokens reales (★, 1 >, st, hora, fecha).
+TEXTO_REAL_LAYOUT_2 = """\
+18:00
+16 Jul
+
+★
+Necaxa
+-125
+
+Empate
++260
+
+★
+Atlante
++275
+1 >
+st
+★
+20:00
+16 Jul
+★
+Tijuana Xolos de Caliente
++175
+Empate
++230
+★
+Tigres UANL
++130
+1 >
+st
+"""
+
+# Ruta al fixture con 9 partidos reales.
+_FIXTURE_REAL_LAYOUT_9 = BASE_DIR / "tests" / "fixtures" / "caliente_debug_text_real_layout.txt"
+
+
+class TestParserRealLayout2Partidos(unittest.TestCase):
+    """Parser con layout real: ★, 1 >, st, hora, fecha entre datos."""
+
+    def test_detecta_dos_partidos(self):
+        res = aoi.analizar_texto(TEXTO_REAL_LAYOUT_2, esperados=2)
+        self.assertEqual(res["status"], aoi.STATUS_OK)
+        self.assertEqual(res["total_validos"], 2)
+        self.assertTrue(res["coincide_esperados"])
+
+    def test_pares_correctos(self):
+        res = aoi.analizar_texto(TEXTO_REAL_LAYOUT_2, esperados=2)
+        pares = [(e["equipo_local"], e["equipo_visitante"]) for e in res["eventos"]]
+        self.assertIn(("Necaxa", "Atlante"), pares)
+        self.assertIn(("Tijuana Xolos de Caliente", "Tigres UANL"), pares)
+
+    def test_hora_necaxa(self):
+        res = aoi.analizar_texto(TEXTO_REAL_LAYOUT_2, esperados=2)
+        necaxa = next(e for e in res["eventos"] if e["equipo_local"] == "Necaxa")
+        self.assertEqual(necaxa["hora"], "18:00")
+
+    def test_fecha_necaxa(self):
+        res = aoi.analizar_texto(TEXTO_REAL_LAYOUT_2, esperados=2)
+        necaxa = next(e for e in res["eventos"] if e["equipo_local"] == "Necaxa")
+        self.assertEqual(necaxa["fecha"], "16 Jul")
+        self.assertEqual(necaxa["dia"], 16)
+        self.assertEqual(necaxa["mes"], 7)
+
+    def test_hora_tijuana(self):
+        res = aoi.analizar_texto(TEXTO_REAL_LAYOUT_2, esperados=2)
+        tj = next(e for e in res["eventos"] if "Tijuana" in e["equipo_local"])
+        self.assertEqual(tj["hora"], "20:00")
+
+    def test_fecha_tijuana(self):
+        res = aoi.analizar_texto(TEXTO_REAL_LAYOUT_2, esperados=2)
+        tj = next(e for e in res["eventos"] if "Tijuana" in e["equipo_local"])
+        self.assertEqual(tj["fecha"], "16 Jul")
+
+    def test_momios_necaxa(self):
+        res = aoi.analizar_texto(TEXTO_REAL_LAYOUT_2, esperados=2)
+        necaxa = next(e for e in res["eventos"] if e["equipo_local"] == "Necaxa")
+        self.assertEqual(necaxa["momio_local"], "-125")
+        self.assertEqual(necaxa["momio_empate"], "+260")
+        self.assertEqual(necaxa["momio_visitante"], "+275")
+
+    def test_no_incluye_layout_como_equipo(self):
+        res = aoi.analizar_texto(TEXTO_REAL_LAYOUT_2, esperados=2)
+        for ev in res["eventos"]:
+            self.assertNotIn("★", ev["equipo_local"])
+            self.assertNotIn("★", ev["equipo_visitante"])
+            self.assertNotEqual(ev["equipo_local"], "st")
+            self.assertNotEqual(ev["equipo_visitante"], "st")
+
+    def test_formato_detectado_multiline(self):
+        res = aoi.analizar_texto(TEXTO_REAL_LAYOUT_2, esperados=2)
+        self.assertEqual(res["formato_detectado"], "multiline")
+
+
+class TestParserRealLayout9Partidos(unittest.TestCase):
+    """Parser con fixture real de 9 partidos incluyendo todos los layout tokens."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.texto = _FIXTURE_REAL_LAYOUT_9.read_text(encoding="utf-8")
+
+    def test_detecta_nueve(self):
+        res = aoi.analizar_texto(self.texto, esperados=9)
+        self.assertEqual(res["status"], aoi.STATUS_OK)
+        self.assertEqual(res["total_validos"], 9)
+        self.assertTrue(res["coincide_esperados"])
+        self.assertEqual(res["duplicados_removidos"], 0)
+
+    def test_partidos_correctos(self):
+        res = aoi.analizar_texto(self.texto, esperados=9)
+        pares = [(e["equipo_local"], e["equipo_visitante"]) for e in res["eventos"]]
+        esperados = [
+            ("Necaxa", "Atlante"),
+            ("Tijuana Xolos de Caliente", "Tigres UANL"),
+            ("Atlético San Luis", "Cruz Azul"),
+            ("León", "Atlas"),
+            ("FC Juárez", "Puebla"),
+            ("Pumas UNAM", "Pachuca"),
+            ("Chivas Guadalajara", "Toluca"),
+            ("Monterrey", "Santos Laguna"),
+            ("Querétaro FC", "América"),
+        ]
+        for par in esperados:
+            self.assertIn(par, pares, f"{par} no encontrado")
+
+    def test_hora_necaxa_16jul(self):
+        res = aoi.analizar_texto(self.texto, esperados=9)
+        necaxa = next(e for e in res["eventos"] if e["equipo_local"] == "Necaxa")
+        self.assertEqual(necaxa["hora"], "18:00")
+        self.assertEqual(necaxa["fecha"], "16 Jul")
+
+    def test_hora_tijuana_16jul(self):
+        res = aoi.analizar_texto(self.texto, esperados=9)
+        tj = next(e for e in res["eventos"] if "Tijuana" in e["equipo_local"])
+        self.assertEqual(tj["hora"], "20:00")
+        self.assertEqual(tj["fecha"], "16 Jul")
+
+    def test_hora_queretaro_18jul(self):
+        res = aoi.analizar_texto(self.texto, esperados=9)
+        qro = next(e for e in res["eventos"] if "Querétaro" in e["equipo_local"])
+        self.assertEqual(qro["hora"], "21:00")
+        self.assertEqual(qro["fecha"], "18 Jul")
+
+    def test_momios_monterrey(self):
+        res = aoi.analizar_texto(self.texto, esperados=9)
+        mty = next(e for e in res["eventos"] if e["equipo_local"] == "Monterrey")
+        self.assertEqual(mty["momio_local"], "-145")
+        self.assertEqual(mty["momio_empate"], "+280")
+        self.assertEqual(mty["momio_visitante"], "+350")
+        self.assertEqual(mty["equipo_visitante"], "Santos Laguna")
+
+    def test_no_mezcla_partidos(self):
+        res = aoi.analizar_texto(self.texto, esperados=9)
+        for ev in res["eventos"]:
+            self.assertFalse(aoi.es_momio_americano_valido(ev["equipo_local"]))
+            self.assertFalse(aoi.es_momio_americano_valido(ev["equipo_visitante"]))
+            self.assertNotIn(ev["equipo_local"].lower(), ("empate", "draw", "x"))
+            self.assertNotIn(ev["equipo_visitante"].lower(), ("empate", "draw", "x"))
+            self.assertNotIn("★", ev["equipo_local"])
+            self.assertNotIn("★", ev["equipo_visitante"])
+
+    def test_reporte_esperar(self):
+        res = aoi.analizar_texto(self.texto, esperados=9)
+        reporte = aoi.render_report(res)
+        self.assertIn("ESPERAR / NO ENVIAR", reporte)
+        self.assertNotIn("CERRAR", reporte)
+
+    def test_reporte_sin_secretos(self):
+        res = aoi.analizar_texto(self.texto, esperados=9)
+        reporte = aoi.render_report(res)
+        for marcador in ("API_KEY", "password", "Bearer ", "Authorization", "SUPERSECRETO"):
+            self.assertNotIn(marcador, reporte)
+
+
+class TestRealLayoutConFuturos(unittest.TestCase):
+    """Real layout con mercado futuro mezclado — no debe mezclar."""
+
+    def test_filtra_campeon_entre_layout(self):
+        texto = """\
+18:00
+16 Jul
+★
+Necaxa
+-125
+Empate
++260
+★
+Atlante
++275
+1 >
+st
+Ganador Liga MX
+★
+América
++150
+Cruz Azul
++200
+★
+20:00
+16 Jul
+★
+Chivas Guadalajara
++120
+Empate
++235
+★
+Toluca
++210
+1 >
+st
+"""
+        res = aoi.analizar_texto(texto, esperados=2)
+        self.assertEqual(res["total_validos"], 2)
+        pares = {(e["equipo_local"], e["equipo_visitante"]) for e in res["eventos"]}
+        self.assertIn(("Necaxa", "Atlante"), pares)
+        self.assertIn(("Chivas Guadalajara", "Toluca"), pares)
+
+
+# ===========================================================================
+# Tests MIXED LEAGUES SCOPE (v1.39.2 fix — filtrar otras ligas)
+# ===========================================================================
+
+# Ruta al fixture con partidos de otras ligas antes de Liga MX.
+_FIXTURE_MIXED_LEAGUES = BASE_DIR / "tests" / "fixtures" / "caliente_debug_text_mixed_leagues.txt"
+
+
+class TestMixedLeaguesScope(unittest.TestCase):
+    """Parser filtra partidos de otras ligas y solo conserva Liga MX."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.texto = _FIXTURE_MIXED_LEAGUES.read_text(encoding="utf-8")
+
+    def test_solo_9_liga_mx(self):
+        res = aoi.analizar_texto(self.texto, esperados=9)
+        self.assertEqual(res["status"], aoi.STATUS_OK)
+        self.assertEqual(res["total_validos"], 9)
+        self.assertTrue(res["coincide_esperados"])
+
+    def test_no_incluye_austria(self):
+        res = aoi.analizar_texto(self.texto, esperados=9)
+        locales = {e["equipo_local"] for e in res["eventos"]}
+        visitantes = {e["equipo_visitante"] for e in res["eventos"]}
+        todos = locales | visitantes
+        self.assertNotIn("Austria Lustenau", todos)
+        self.assertNotIn("FC Wil", todos)
+
+    def test_no_incluye_randers(self):
+        res = aoi.analizar_texto(self.texto, esperados=9)
+        locales = {e["equipo_local"] for e in res["eventos"]}
+        visitantes = {e["equipo_visitante"] for e in res["eventos"]}
+        todos = locales | visitantes
+        self.assertNotIn("Randers FC", todos)
+        self.assertNotIn("Sonderjyske", todos)
+
+    def test_no_incluye_myanmar(self):
+        res = aoi.analizar_texto(self.texto, esperados=9)
+        locales = {e["equipo_local"] for e in res["eventos"]}
+        visitantes = {e["equipo_visitante"] for e in res["eventos"]}
+        todos = locales | visitantes
+        for equipo in ("Thitsar Arman FC U20", "Sagaing United FC U20",
+                       "Yangon City FC U20", "Yangon United FC U20"):
+            self.assertNotIn(equipo, todos)
+
+    def test_no_incluye_femenil(self):
+        res = aoi.analizar_texto(self.texto, esperados=9)
+        locales = {e["equipo_local"] for e in res["eventos"]}
+        visitantes = {e["equipo_visitante"] for e in res["eventos"]}
+        todos = locales | visitantes
+        self.assertNotIn("Tigres Femenil", todos)
+        self.assertNotIn("América Femenil", todos)
+
+    def test_partidos_correctos_liga_mx(self):
+        res = aoi.analizar_texto(self.texto, esperados=9)
+        pares = [(e["equipo_local"], e["equipo_visitante"]) for e in res["eventos"]]
+        esperados = [
+            ("Necaxa", "Atlante"),
+            ("Tijuana Xolos de Caliente", "Tigres UANL"),
+            ("Atlético San Luis", "Cruz Azul"),
+            ("León", "Atlas"),
+            ("FC Juárez", "Puebla"),
+            ("Pumas UNAM", "Pachuca"),
+            ("Chivas Guadalajara", "Toluca"),
+            ("Monterrey", "Santos Laguna"),
+            ("Querétaro FC", "América"),
+        ]
+        for par in esperados:
+            self.assertIn(par, pares, f"{par} no encontrado")
+
+    def test_hora_y_fecha_preservadas(self):
+        res = aoi.analizar_texto(self.texto, esperados=9)
+        necaxa = next(e for e in res["eventos"] if e["equipo_local"] == "Necaxa")
+        self.assertEqual(necaxa["hora"], "18:00")
+        self.assertEqual(necaxa["fecha"], "16 Jul")
+
+    def test_reporte_esperar(self):
+        res = aoi.analizar_texto(self.texto, esperados=9)
+        reporte = aoi.render_report(res)
+        self.assertIn("ESPERAR / NO ENVIAR", reporte)
+        self.assertNotIn("CERRAR", reporte)
+
+    def test_multiline_parser_full_text_finds_more_than_9_raw(self):
+        """El parser multiline sobre texto completo detecta >9 eventos crudos
+        (incluyendo otras ligas), y el pipeline filtra a solo 9 Liga MX."""
+        # Verificar que extraer_eventos_multiline sobre el texto completo
+        # produce mas de 9 eventos (incluye otras ligas).
+        crudos = aoi.extraer_eventos_multiline(self.texto)
+        self.assertGreater(len(crudos), 9,
+                           "El parser multiline debe detectar >9 eventos en "
+                           "texto con ligas mixtas antes del filtro Liga MX")
+
+    def test_excluded_teams_not_in_pipeline_output(self):
+        """Equipos de otras ligas no deben aparecer en la salida del pipeline."""
+        res = aoi.analizar_texto(self.texto, esperados=9)
+        locales = {e["equipo_local"] for e in res["eventos"]}
+        visitantes = {e["equipo_visitante"] for e in res["eventos"]}
+        todos = locales | visitantes
+        excluidos = [
+            "Austria Lustenau", "FC Wil", "Randers FC", "Sonderjyske",
+            "Thitsar Arman FC U20", "Sagaing United FC U20",
+            "Yangon City FC U20", "Yangon United FC U20",
+        ]
+        for equipo in excluidos:
+            self.assertNotIn(equipo, todos,
+                             f"{equipo} no debe estar en resultados Liga MX")
+
+
+class TestMixedLeaguesInline(unittest.TestCase):
+    """Test inline con 2 partidos externos + 1 Liga MX."""
+
+    def test_filtra_externo_conserva_liga_mx(self):
+        texto = """\
+Austrian Football League
+18:30
+16 Jul
+★
+Austria Lustenau
++200
+Empate
++220
+★
+FC Wil
++140
+1 >
+st
+Liga MX
+18:00
+16 Jul
+★
+Necaxa
+-125
+Empate
++260
+★
+Atlante
++275
+1 >
+st
+"""
+        res = aoi.analizar_texto(texto, esperados=1)
+        self.assertEqual(res["total_validos"], 1)
+        self.assertEqual(res["eventos"][0]["equipo_local"], "Necaxa")
+        self.assertEqual(res["eventos"][0]["equipo_visitante"], "Atlante")
+        # Austria no debe aparecer.
+        locales = {e["equipo_local"] for e in res["eventos"]}
+        self.assertNotIn("Austria Lustenau", locales)
+
+
+class TestFallbackFullText(unittest.TestCase):
+    """Si el recorte de sección falla, fallback a texto completo + filtro."""
+
+    def test_fallback_cuando_recorte_no_encuentra_liga_mx(self):
+        # Texto que tiene otras ligas y Liga MX pero sin marcador "Liga MX"
+        # claro que el recorte pueda usar (simula DOM raro).
+        texto = """\
+Austrian Football League
+18:30
+16 Jul
+★
+Austria Lustenau
++200
+Empate
++220
+★
+FC Wil
++140
+1 >
+st
+18:00
+16 Jul
+★
+Necaxa
+-125
+Empate
++260
+★
+Atlante
++275
+1 >
+st
+★
+20:00
+16 Jul
+★
+Chivas Guadalajara
++120
+Empate
++235
+★
+Toluca
++210
+1 >
+st
+"""
+        res = aoi.analizar_texto(texto, esperados=2)
+        self.assertEqual(res["status"], aoi.STATUS_OK)
+        self.assertEqual(res["total_validos"], 2)
+        pares = {(e["equipo_local"], e["equipo_visitante"]) for e in res["eventos"]}
+        self.assertIn(("Necaxa", "Atlante"), pares)
+        self.assertIn(("Chivas Guadalajara", "Toluca"), pares)
+        self.assertNotIn(("Austria Lustenau", "FC Wil"), pares)
+
+
+# ===========================================================================
 # Garantías de seguridad/cumplimiento sobre el código fuente
 # ===========================================================================
 class TestRestriccionesCodigoFuente(unittest.TestCase):

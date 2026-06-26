@@ -2,7 +2,7 @@
 """
 assisted_odds_import.py — Assisted Sportsbook Odds Import (Survivor Liga MX).
 
-v1.39.1.
+v1.39.2.
 
 Lógica PURA de parseo/validación/reporte para una importación ASISTIDA POR
 USUARIO de momios 1X2 desde un sportsbook (ej. Caliente Liga MX).
@@ -33,7 +33,7 @@ from typing import Any, Dict, List, Optional, Tuple
 # ---------------------------------------------------------------------------
 # Constantes
 # ---------------------------------------------------------------------------
-VERSION = "v1.39.1"
+VERSION = "v1.39.2"
 
 # Decisión operativa: este flujo asistido NUNCA cierra ni envía un pick.
 DEC_ESPERAR = "ESPERAR / NO ENVIAR"
@@ -203,28 +203,31 @@ def extraer_eventos_crudos(texto: str) -> List[Dict[str, Any]]:
 
 
 # ---------------------------------------------------------------------------
-# Parseo MULTILINE (nuevo en v1.39.1)
+# Parseo MULTILINE (v1.39.1 base, v1.39.2 layout-aware)
 #
-# Caliente cuando se copia desde Chrome normal produce bloques como:
+# Caliente cuando se copia desde Chrome produce bloques con layout noise:
 #
+#   18:00
+#   16 Jul
+#   ★
 #   Necaxa
 #   -125
 #   Empate
 #   +260
+#   ★
 #   Atlante
 #   +275
+#   1 >
+#   st
 #
-# La estrategia:
+# La estrategia v1.39.2:
 # 1. Dividir el texto en líneas, eliminar líneas vacías y espacios laterales.
-# 2. Detectar si hay palabras clave de mercados futuros/campeón y saltarlas.
-# 3. Construir una máquina de estados que avanza token a token buscando la
-#    secuencia: EQUIPO → MOMIO → "Empate"/"Draw"/"X" → MOMIO → EQUIPO → MOMIO.
-#    - Un EQUIPO es una línea que NO es momio y NO es etiqueta Empate/Draw/X.
-#    - Un MOMIO es una línea que cumple es_momio_americano_valido().
-#    - "Empate/Draw/X" es una línea que coincide con _DRAW_LABELS.
-# 4. Ignorar bloques donde se detecte keyword de campeón/futuro.
-# 5. Si se completa la secuencia de 6 tokens, guardar el evento. Resetear
-#    máquina de estados ante cualquier token que rompa la secuencia.
+# 2. PRE-FILTRAR líneas de layout puro (★, "1 >", "st", etc.) — se ignoran
+#    en cualquier estado sin resetear la máquina.
+# 3. Detectar líneas de HORA (HH:MM) y FECHA (DD Mon) y capturarlas como
+#    contexto para el siguiente partido, sin alterar el estado.
+# 4. Detectar palabras clave de mercados futuros/campeón y resetear.
+# 5. Construir la secuencia: EQUIPO → MOMIO → Empate/Draw/X → MOMIO → EQUIPO → MOMIO.
 # ---------------------------------------------------------------------------
 
 # Tokens de la máquina de estados multiline.
@@ -234,6 +237,81 @@ _ML_WAIT_DRAW_LBL = 2    # esperando etiqueta Empate/Draw/X
 _ML_WAIT_MD = 3          # esperando momio empate
 _ML_WAIT_VISIT = 4       # esperando nombre equipo visitante
 _ML_WAIT_MV = 5          # esperando momio visitante
+
+# ---------------------------------------------------------------------------
+# Detectores de tokens de layout (v1.39.2)
+# ---------------------------------------------------------------------------
+
+# Patrón de hora: HH:MM (ej. 18:00, 20:00, 9:30)
+_RE_HORA = re.compile(r"^\d{1,2}:\d{2}$")
+
+# Patrón de fecha corta: DD Mon (ej. "16 Jul", "3 Ago", "17 Julio")
+_RE_FECHA_CORTA = re.compile(
+    r"^(\d{1,2})\s+([A-Za-zÁÉÍÓÚÜÑáéíóúüñ]{3,12})\.?$"
+)
+
+# Tokens de layout visual que siempre se ignoran (case-insensitive match).
+_LAYOUT_JUNK = frozenset([
+    "★", "☆", "⭐",
+    "1 >", "1>",
+    "st",
+    "1st",
+    "2nd",
+    "3rd",
+    ">",
+    "ver más", "ver mas",
+    "más mercados", "mas mercados",
+    "próximos eventos", "proximos eventos",
+])
+
+# Patrones regex adicionales de layout a ignorar.
+_RE_LAYOUT_PATTERNS = re.compile(
+    r"^("
+    r"\d+\s*>"           # "1 >", "2 >", etc.
+    r"|ver\s+m[aá]s.*"   # "Ver más mercados"
+    r"|m[aá]s\s+mercados"
+    r"|pr[oó]ximos?\s+eventos?"
+    r"|apuestas?\s+f[uú]tbol.*"  # "Apuestas Fútbol México"
+    r"|liga\s+mx"
+    r"|local\s+empate\s+visitante"  # header row
+    r")$",
+    re.IGNORECASE,
+)
+
+
+def _es_layout_junk(linea: str) -> bool:
+    """True si la línea es un token visual de layout que debe ignorarse."""
+    s = linea.strip()
+    if not s:
+        return True
+    if s.lower() in _LAYOUT_JUNK or s in _LAYOUT_JUNK:
+        return True
+    if _RE_LAYOUT_PATTERNS.match(s):
+        return True
+    return False
+
+
+def _es_hora(linea: str) -> bool:
+    """True si la línea es solo una hora HH:MM."""
+    return bool(_RE_HORA.match(linea.strip()))
+
+
+def _es_fecha_corta(linea: str) -> Optional[Tuple[int, str, int]]:
+    """
+    Si la línea es 'DD Mon', devuelve (dia, mes_texto, mes_num).
+    Si no, devuelve None.
+    """
+    m = _RE_FECHA_CORTA.match(linea.strip())
+    if not m:
+        return None
+    dia = int(m.group(1))
+    mes_txt = m.group(2)
+    mes_num = _mes_a_numero(mes_txt)
+    if mes_num == 0:
+        return None
+    if not (1 <= dia <= 31):
+        return None
+    return (dia, mes_txt, mes_num)
 
 
 def _es_etiqueta_empate(linea: str) -> bool:
@@ -248,6 +326,8 @@ def _es_linea_equipo(linea: str) -> bool:
     - No tiene solo dígitos.
     - Tiene al menos 2 caracteres.
     - No contiene palabras clave de campeón/futuro (evitar mezcla de mercados).
+    - No es layout junk.
+    - No es hora ni fecha corta.
     """
     s = linea.strip()
     if len(s) < 2:
@@ -260,6 +340,12 @@ def _es_linea_equipo(linea: str) -> bool:
         return False
     if _FUTURO_KEYWORDS.search(s):
         return False
+    if _es_layout_junk(s):
+        return False
+    if _es_hora(s):
+        return False
+    if _es_fecha_corta(s) is not None:
+        return False
     return True
 
 
@@ -267,20 +353,12 @@ def extraer_eventos_multiline(texto: str) -> List[Dict[str, Any]]:
     """
     Extrae eventos 1X2 de texto multiline copiado desde Caliente en Chrome.
 
-    Formato esperado (una línea por token):
-        Necaxa
-        -125
-        Empate
-        +260
-        Atlante
-        +275
+    v1.39.2: soporta tokens de layout real (★, 1 >, st, HH:MM, DD Mon).
+    Los tokens de layout se ignoran transparentemente sin resetear el estado.
+    Las líneas de hora/fecha se capturan como contexto para el próximo evento.
 
     La máquina de estados avanza por 6 pasos:
         WAIT_LOCAL → WAIT_ML → WAIT_DRAW_LBL → WAIT_MD → WAIT_VISIT → WAIT_MV
-
-    - Líneas de campeón/futuro resetean el estado para no mezclar mercados.
-    - Si un token no encaja en el estado actual, se retrocede y se reclasifica
-      el token desde el estado inicial donde corresponda.
     """
     lineas = [ln.strip() for ln in str(texto or "").splitlines()]
     lineas = [ln for ln in lineas if ln]  # eliminar vacías
@@ -294,22 +372,43 @@ def extraer_eventos_multiline(texto: str) -> List[Dict[str, Any]]:
     momio_empate: str = ""
     visitante: str = ""
 
+    # Contexto de hora/fecha (se acumula y se usa en el siguiente evento).
+    ctx_hora: str = ""
+    ctx_dia: int = 0
+    ctx_mes_texto: str = ""
+    ctx_mes: int = 0
+
     def _reset() -> None:
         nonlocal estado, local, momio_local, momio_empate, visitante
         estado = _ML_WAIT_LOCAL
         local = momio_local = momio_empate = visitante = ""
 
     for linea in lineas:
-        # Mercado de campeón/futuro → reset total para evitar mezcla.
+        # --- Paso 0: layout junk → ignorar sin alterar estado ---
+        if _es_layout_junk(linea):
+            continue
+
+        # --- Paso 1: hora HH:MM → capturar contexto, no altera estado ---
+        if _es_hora(linea):
+            ctx_hora = linea.strip()
+            continue
+
+        # --- Paso 2: fecha DD Mon → capturar contexto, no altera estado ---
+        fecha_info = _es_fecha_corta(linea)
+        if fecha_info is not None:
+            ctx_dia, ctx_mes_texto, ctx_mes = fecha_info
+            continue
+
+        # --- Paso 3: mercado futuro/campeón → reset ---
         if _FUTURO_KEYWORDS.search(linea):
             _reset()
             continue
 
+        # --- Paso 4: máquina de estados principal ---
         if estado == _ML_WAIT_LOCAL:
             if _es_linea_equipo(linea):
                 local = linea
                 estado = _ML_WAIT_ML
-            # Cualquier otra línea (momios sueltos, cabeceras) se ignora.
 
         elif estado == _ML_WAIT_ML:
             if es_momio_americano_valido(linea):
@@ -318,7 +417,6 @@ def extraer_eventos_multiline(texto: str) -> List[Dict[str, Any]]:
             elif _es_linea_equipo(linea):
                 # La línea anterior era ruido; esta podría ser el verdadero local.
                 local = linea
-                # estado permanece _ML_WAIT_ML
             else:
                 _reset()
 
@@ -350,13 +448,16 @@ def extraer_eventos_multiline(texto: str) -> List[Dict[str, Any]]:
         elif estado == _ML_WAIT_MV:
             if es_momio_americano_valido(linea):
                 momio_visitante = linea
-                # Evento completo — fecha/hora ausentes en multiline puro.
+                # Evento completo — usar hora/fecha del contexto acumulado.
+                fecha_str = (
+                    f"{ctx_dia:02d} {ctx_mes_texto}" if ctx_dia and ctx_mes_texto else ""
+                )
                 ev: Dict[str, Any] = {
-                    "hora": "",
-                    "dia": 0,
-                    "mes_texto": "",
-                    "mes": 0,
-                    "fecha": "",
+                    "hora": ctx_hora,
+                    "dia": ctx_dia,
+                    "mes_texto": ctx_mes_texto,
+                    "mes": ctx_mes,
+                    "fecha": fecha_str,
                     "equipo_local": local,
                     "equipo_visitante": visitante,
                     "momio_local": momio_local,
@@ -415,16 +516,183 @@ def _hay_momios_sueltos(texto: str) -> bool:
 
 
 # ---------------------------------------------------------------------------
+# Scope Liga MX: recorte de sección + filtro por equipos (v1.39.2 fix)
+# ---------------------------------------------------------------------------
+
+# Marcadores que indican el inicio de la sección Liga MX en el texto de Caliente.
+_LIGA_MX_START_MARKERS = re.compile(
+    r"(Liga\s+MX\s*[-–—]?\s*Partidos"
+    r"|Liga\s+MX"
+    r"|Mexico\s+Liga\s+MX"
+    r"|Top\s+Ligas\s+Mexico)",
+    re.IGNORECASE,
+)
+
+# Marcadores que indican el fin de la sección Liga MX (inicio de otra liga).
+_LIGA_MX_END_MARKERS = re.compile(
+    r"^("
+    r"Liga\s+MX\s+Femenil"
+    r"|Liga\s+de\s+Expansi[oó]n"
+    r"|Premier\s+League"
+    r"|La\s+Liga"
+    r"|Serie\s+A"
+    r"|Bundesliga"
+    r"|Ligue\s+1"
+    r"|MLS"
+    r"|Copa\s+Libertadores"
+    r"|Copa\s+Sudamericana"
+    r"|Champions\s+League"
+    r"|Europa\s+League"
+    r"|Austrian\s+Football"
+    r"|Danish\s+Superliga"
+    r"|Myanmar"
+    r"|[A-Z][a-z]+\s+Football\s+League"
+    r"|[A-Z][a-z]+\s+Liga"
+    r"|[A-Z][a-z]+\s+League"
+    r"|[A-Z][a-z]+\s+Premier"
+    r"|[A-Z][a-z]+\s+Division"
+    r").*$",
+    re.IGNORECASE | re.MULTILINE,
+)
+
+# Equipos Liga MX conocidos (normalizados, sin acentos, lower).
+# Usados como filtro secundario cuando el scope por sección no es confiable.
+_EQUIPOS_LIGA_MX_NORM = frozenset([
+    "necaxa", "atlante",
+    "tijuana xolos de caliente", "tijuana", "xolos",
+    "tigres uanl", "tigres",
+    "atletico san luis", "atletico de san luis", "san luis",
+    "cruz azul",
+    "leon", "club leon",
+    "atlas",
+    "fc juarez", "juarez", "bravos",
+    "puebla",
+    "pumas unam", "pumas",
+    "pachuca",
+    "chivas guadalajara", "chivas", "guadalajara",
+    "toluca",
+    "monterrey", "rayados",
+    "santos laguna", "santos",
+    "queretaro fc", "queretaro", "gallos",
+    "america", "club america",
+    "mazatlan", "mazatlan fc",
+])
+
+
+def _recortar_seccion_liga_mx(texto: str) -> str:
+    """
+    Intenta recortar el texto a solo la sección de Liga MX.
+
+    Solo se activa si detecta marcadores de OTRAS ligas en el texto (indicando
+    que hay un bloque multi-liga). Si no hay otras ligas, devuelve el texto
+    completo sin modificar.
+
+    Busca un marcador de inicio ("Liga MX") y luego un marcador de fin
+    (otra liga). Si encuentra ambos, devuelve solo esa porción.
+    """
+    # Solo activar scoping si hay evidencia de otras ligas.
+    otras_ligas = re.findall(
+        r"(?:Austrian Football|Danish Superliga|Myanmar|Premier League|"
+        r"La Liga|Serie A|Bundesliga|Ligue 1|MLS|Copa Libertadores|"
+        r"Liga de Expansi[oó]n|Liga MX Femenil)",
+        texto,
+        re.IGNORECASE,
+    )
+    if not otras_ligas:
+        return texto  # No hay multi-liga; no recortar.
+
+    # Buscar el ÚLTIMO match de "Liga MX" que NO sea "Liga MX Femenil" ni
+    # "Ganador Liga MX" ni "Campeón Liga MX" como inicio de sección.
+    inicio = None
+    for m in _LIGA_MX_START_MARKERS.finditer(texto):
+        # Verificar que no sea "Liga MX Femenil" ni dentro de "Ganador Liga MX".
+        context_after = texto[m.start():m.start() + 30]
+        if "femenil" in context_after.lower():
+            continue
+        context_before = texto[max(0, m.start() - 15):m.start()]
+        if re.search(r"(ganador|campe[oó]n|winner)", context_before, re.IGNORECASE):
+            continue
+        inicio = m.start()
+
+    if inicio is None:
+        return texto  # No se encontró marcador de Liga MX válido.
+
+    seccion = texto[inicio:]
+
+    # Buscar fin de sección (otra liga después del bloque Liga MX).
+    fin_match = None
+    for m in _LIGA_MX_END_MARKERS.finditer(seccion):
+        # El primer match podría ser el propio "Liga MX" del inicio, skipear.
+        if m.start() > 10:
+            fin_match = m
+            break
+
+    if fin_match:
+        seccion = seccion[: fin_match.start()]
+
+    return seccion
+
+
+def _es_equipo_liga_mx(nombre: str) -> bool:
+    """True si el nombre (normalizado) coincide con algún equipo Liga MX."""
+    norm = _norm_equipo(nombre)
+    if not norm:
+        return False
+    # Excluir variantes femenil (Liga MX Femenil es torneo separado).
+    if "femenil" in norm:
+        return False
+    # Match exacto primero.
+    if norm in _EQUIPOS_LIGA_MX_NORM:
+        return True
+    # Match parcial: si algún equipo conocido está contenido en el nombre
+    # o el nombre está contenido en algún equipo conocido.
+    for eq in _EQUIPOS_LIGA_MX_NORM:
+        if eq in norm or norm in eq:
+            return True
+    return False
+
+
+def _filtrar_eventos_liga_mx(
+    eventos: List[Dict[str, Any]],
+) -> List[Dict[str, Any]]:
+    """
+    Filtra eventos para conservar solo los que tengan AL MENOS un equipo
+    reconocido de Liga MX (local o visitante).
+
+    Si TODOS los eventos ya son Liga MX, retorna sin cambios.
+    Si NINGUNO es Liga MX, retorna sin cambios (para no perder datos si
+    la lista de equipos no está actualizada).
+    """
+    if not eventos:
+        return eventos
+
+    liga_mx = [
+        ev for ev in eventos
+        if _es_equipo_liga_mx(ev.get("equipo_local", ""))
+        or _es_equipo_liga_mx(ev.get("equipo_visitante", ""))
+    ]
+
+    # Si no reconoce ninguno, mejor devolver todos (la lista puede estar
+    # desactualizada) en vez de perder datos.
+    if not liga_mx:
+        return eventos
+
+    return liga_mx
+
+
+# ---------------------------------------------------------------------------
 # Pipeline principal
 # ---------------------------------------------------------------------------
 def analizar_texto(texto: str, esperados: int = 9) -> Dict[str, Any]:
     """
     Pipeline completo de parseo sobre el texto visible.
 
-    Estrategia (v1.39.1):
+    Estrategia (v1.39.2):
     1. Intenta el parser single-line (regex original).
-    2. Si no produce resultados, intenta el parser multiline.
-    3. Si ninguno produce resultados pero hay momios sueltos en el texto,
+    2. Si no produce resultados, parsea TODO el texto completo con el parser
+       multiline.
+    3. Aplica filtro de equipos Liga MX para excluir partidos de otras ligas.
+    4. Si ninguno produce resultados pero hay momios sueltos en el texto,
        reporta PARSER_NEEDS_REVIEW en vez de NO_MATCHES_FOUND.
 
     Devuelve un dict con eventos válidos/deduplicados, conteos, eventos
@@ -439,6 +707,7 @@ def analizar_texto(texto: str, esperados: int = 9) -> Dict[str, Any]:
     # --- Paso 2: parser multiline (solo si single-line no encontró nada) ---
     crudos_ml: List[Dict[str, Any]] = []
     if not crudos_sl:
+        # Parsear TODO el texto completo primero.
         crudos_ml = extraer_eventos_multiline(texto)
 
     crudos = crudos_sl if crudos_sl else crudos_ml
@@ -451,6 +720,9 @@ def analizar_texto(texto: str, esperados: int = 9) -> Dict[str, Any]:
             validos_pre.append(ev)
         else:
             invalidos.append(ev)
+
+    # --- Filtro de scope Liga MX (excluir partidos de otras ligas) ---
+    validos_pre = _filtrar_eventos_liga_mx(validos_pre)
 
     eventos, duplicados = deduplicar(validos_pre)
 
