@@ -105,6 +105,7 @@ run_step "Lectura de mercado" python3 src/lectura_mercado.py
 run_step "Reporte presupuesto APIs" python3 src/api_budget.py report
 run_step "Estado de mercado sin gastar API" python3 src/market_status.py
 run_step "Generar reporte final" python3 src/generar_reporte.py --main-log "$LOG" --output "$REPORTE"
+run_step "Safety gate final operativo" python3 scripts/final_security_gate.py --report "$REPORTE"
 
 echo "" | tee -a "$LOG"
 echo "▶️ Enviar reporte por Telegram" | tee -a "$LOG"
