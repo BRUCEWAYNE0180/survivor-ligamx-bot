@@ -2,14 +2,17 @@
 from __future__ import annotations
 
 import argparse
+import importlib.util
 import json
 import os
+import sys
 import urllib.request
 from datetime import datetime
 from pathlib import Path
 
 
 MAX_TELEGRAM_CHARS = 3500
+_FINAL_SECURITY_GATE = None
 
 
 def dividir_texto(texto: str, max_chars: int = MAX_TELEGRAM_CHARS) -> list[str]:
@@ -27,6 +30,49 @@ def dividir_texto(texto: str, max_chars: int = MAX_TELEGRAM_CHARS) -> list[str]:
         partes.append(texto)
 
     return partes
+
+
+def _cargar_final_security_gate():
+    global _FINAL_SECURITY_GATE
+
+    if _FINAL_SECURITY_GATE is not None:
+        return _FINAL_SECURITY_GATE
+
+    module_path = Path(__file__).resolve().parents[1] / "scripts" / "final_security_gate.py"
+    spec = importlib.util.spec_from_file_location("final_security_gate", module_path)
+
+    if spec is None or spec.loader is None:
+        raise RuntimeError(f"No se pudo cargar final_security_gate desde {module_path}")
+
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+    _FINAL_SECURITY_GATE = module
+    return module
+
+
+def validar_reporte_para_telegram(path: Path):
+    gate = _cargar_final_security_gate()
+    return gate.validate_report_file(path)
+
+
+def construir_advertencia_bloqueo(path: Path, result) -> str:
+    lineas = [
+        "🚫 NO ENVIAR: reporte bloqueado por seguridad operativa.",
+        f"Reporte: {path}",
+        f"Motivo: {result.message}",
+        "Decisión: NO ENVIAR",
+    ]
+
+    if getattr(result, "allowed_marker", None):
+        lineas.append(f"Etiqueta segura detectada: {result.allowed_marker}")
+
+    if getattr(result, "forbidden_matches", None):
+        lineas.append("Patrones prohibidos detectados:")
+        for match in result.forbidden_matches:
+            lineas.append(f"- {match}")
+
+    return "\n".join(lineas)
 
 
 def enviar_mensaje(token: str, chat_id: str, texto: str) -> None:
@@ -84,7 +130,17 @@ def main() -> int:
         print("⚠️ Telegram no configurado. Faltan TELEGRAM_BOT_TOKEN o TELEGRAM_CHAT_ID.")
         return 2
 
-    mensaje = construir_mensaje_desde_reporte(Path(args.report))
+    report_path = Path(args.report)
+    safety_result = validar_reporte_para_telegram(report_path)
+
+    if not safety_result.ok:
+        advertencia = construir_advertencia_bloqueo(report_path, safety_result)
+        enviar_mensaje(token, chat_id, advertencia)
+        print("🚫 Telegram bloqueado por safety guard interno.")
+        print(safety_result.message)
+        return safety_result.exit_code
+
+    mensaje = construir_mensaje_desde_reporte(report_path)
     partes = dividir_texto(mensaje)
 
     for idx, parte in enumerate(partes, start=1):

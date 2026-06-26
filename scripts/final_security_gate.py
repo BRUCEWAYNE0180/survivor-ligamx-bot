@@ -4,10 +4,11 @@ final_security_gate.py
 
 Guardia final de seguridad operativa para Survivor Liga MX.
 
-Objetivo:
-- Validar que el reporte final mantenga una decisión segura.
-- Bloquear cualquier reporte que no incluya una etiqueta permitida.
-- Bloquear señales peligrosas como CERRAR, PICK LISTO, ENVIAR PICK o APUESTA.
+Exit codes:
+- 0 = reporte seguro, continuar.
+- 1 = error interno / archivo no encontrado.
+- 2 = etiqueta segura no encontrada.
+- 3 = señal operativa peligrosa detectada.
 
 Este script NO cierra picks.
 Este script NO envía Telegram.
@@ -46,6 +47,16 @@ FORBIDDEN_PATTERNS = [
     r"\bBET\b",
 ]
 
+NEGATION_WORDS = {"NO", "NUNCA", "SIN"}
+NEGATION_PHRASES = {
+    ("NO", "DEBE"),
+    ("NO", "DEBERIA"),
+    ("NO", "PUEDE"),
+    ("NO", "SE"),
+    ("NO", "INTENTAR"),
+    ("NUNCA", "DEBE"),
+}
+
 
 @dataclass(frozen=True)
 class SafetyGateResult:
@@ -75,13 +86,42 @@ def find_allowed_marker(text: str) -> str | None:
     return None
 
 
+def _tokens_before(text: str, start: int, window: int = 80) -> list[str]:
+    prefix = text[max(0, start - window) : start].strip()
+    return re.findall(r"[A-Z0-9_]+", prefix)
+
+
+def _is_negated_operational_context(text: str, start: int) -> bool:
+    tokens = _tokens_before(text, start)
+
+    if not tokens:
+        return False
+
+    if tokens[-1] in NEGATION_WORDS:
+        return True
+
+    if len(tokens) >= 2 and tuple(tokens[-2:]) in NEGATION_PHRASES:
+        return True
+
+    if len(tokens) >= 3 and tuple(tokens[-3:]) in {
+        ("NO", "SE", "DEBE"),
+        ("NO", "SE", "PUEDE"),
+    }:
+        return True
+
+    return False
+
+
 def find_forbidden_matches(text: str) -> tuple[str, ...]:
     normalized_text = normalize_text(text)
     matches: list[str] = []
 
     for pattern in FORBIDDEN_PATTERNS:
-        if re.search(pattern, normalized_text):
+        for match in re.finditer(pattern, normalized_text):
+            if _is_negated_operational_context(normalized_text, match.start()):
+                continue
             matches.append(pattern)
+            break
 
     return tuple(matches)
 
