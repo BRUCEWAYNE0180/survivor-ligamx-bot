@@ -84,9 +84,11 @@ Variables de entorno relevantes:
 - `ODDS_WATCHDOG_MIN_INTERVAL_MINUTES`: cooldown del watchdog (default `180`).
 - `ODDS_WATCHDOG_TELEGRAM_IMPORTANTE`: `1` para incluir IMPORTANTE en Telegram.
 - `ODDS_WATCHDOG_TOTALS_LINE`: línea de Over/Under preferida (default `2.5`).
-- `ODDS_MARKETS` (de `sync_odds_api`): para que The Odds API devuelva mercados
-  opcionales, inclúyelos aquí, p. ej. `h2h,totals,btts,spreads,draw_no_bet`.
-  Si no se piden/publican, el watchdog reporta `mercado no disponible`.
+- `ODDS_MARKETS` (de `sync_odds_api`): default operativo recomendado
+  `h2h,totals,spreads`. **BTTS** y **Draw No Bet** son opcionales y solo deben
+  añadirse si el proveedor/endpoint los soporta para Liga MX (pedir mercados no
+  soportados puede provocar **HTTP 422**). Si un mercado no llega, el watchdog
+  reporta `mercado no disponible` sin romper.
 - `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID`: destino de las alertas Telegram.
 
 Archivos que produce (en carpetas locales ignoradas por git):
@@ -138,7 +140,7 @@ claro (no rompe nada más).
 ## Tests
 
 ```bash
-python3 -m unittest
+python3 -m unittest discover -s tests
 # o por módulo:
 python3 -m unittest tests.test_market_watchdog
 python3 -m unittest tests.test_import_fbref_schedule

@@ -30,14 +30,25 @@ if [ -f ".env" ]; then
   set +a
 fi
 
+status=0
 {
   echo "=================================================="
   echo "Market Watchdog local — $(date)"
   echo "Proyecto: $PROJECT_DIR"
   echo "--------------------------------------------------"
   # Ejecuta el watchdog. Pasa cualquier argumento extra recibido por este script.
+  # Capturamos el exit code real para NO ocultar fallos del watchdog.
   python3 src/market_watchdog.py "$@"
+  status=$?
+  echo "--------------------------------------------------"
+  echo "Exit code watchdog: $status"
   echo "Fin: $(date)"
 } >> "$LOG" 2>&1
 
-echo "OK: salida agregada a $PROJECT_DIR/$LOG"
+if [ "$status" -ne 0 ]; then
+  echo "ERROR: el watchdog terminó con exit code $status. Revisa $PROJECT_DIR/$LOG" >&2
+else
+  echo "OK: salida agregada a $PROJECT_DIR/$LOG"
+fi
+
+exit "$status"

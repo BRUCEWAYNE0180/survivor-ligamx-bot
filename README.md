@@ -57,8 +57,22 @@ momios reales.
 ## Tests
 
 ```bash
-python3 -m unittest
+python3 -m unittest discover -s tests
 ```
+
+## Configuración de The Odds API (mercados)
+
+El default operativo **recomendado** para The Odds API es:
+
+```bash
+ODDS_MARKETS=h2h,totals,spreads
+```
+
+Los mercados **BTTS** y **Draw No Bet** son **opcionales** y solo deben añadirse a
+`ODDS_MARKETS` si el proveedor/endpoint realmente los soporta para Liga MX. Si se
+piden mercados no soportados, The Odds API puede responder **HTTP 422**; por eso
+no van en el default. El watchdog igualmente reporta `mercado no disponible` para
+cualquier mercado que no llegue, sin romper.
 
 ## Notas de seguridad / repo
 
