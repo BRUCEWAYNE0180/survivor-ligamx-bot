@@ -1,5 +1,49 @@
 # Changelog — Survivor Liga MX Bot
 
+## v1.39.1 — Caliente Multiline Parser Fix + Chrome Capture Prep
+
+### Corregido / Mejorado
+- `src/assisted_odds_import.py`: parser multiline para texto copiado desde Chrome
+  normal de Caliente. Cuando la página se copia manualmente, los momios llegan en
+  formato multiline (una línea por token: equipo local, momio, "Empate", momio,
+  equipo visitante, momio). El parser original solo soportaba single-line
+  (`HH:MM DD Mon Local MOMIO Empate MOMIO Visitante MOMIO`).
+  - Máquina de estados de 6 pasos que detecta la secuencia:
+    `EQUIPO → MOMIO → Empate/Draw/X → MOMIO → EQUIPO → MOMIO`.
+  - Filtra mercados de campeón/futuros (keywords: "Ganador", "Champion",
+    "Título", "Futuro", etc.) para no mezclarlos con partidos 1X2.
+  - Si el parser single-line no detecta eventos, intenta el multiline.
+  - Nuevo estado `PARSER_NEEDS_REVIEW`: se reporta cuando el texto contiene
+    momios americanos pero no se pudieron formar partidos 1X2 completos (antes
+    retornaba simplemente `NO_MATCHES_FOUND`).
+  - Campo `formato_detectado` en el resultado (`single-line` / `multiline`).
+  - Deduplicación funciona igual en ambos formatos.
+  - Los 9 partidos reales de Liga MX desde el texto capturado de Caliente se
+    parsean correctamente: Necaxa vs Atlante, Tijuana Xolos de Caliente vs
+    Tigres UANL, Atlético San Luis vs Cruz Azul, León vs Atlas, FC Juárez vs
+    Puebla, Pumas UNAM vs Pachuca, Chivas Guadalajara vs Toluca, Monterrey vs
+    Santos Laguna, Querétaro FC vs América.
+- `scripts/assisted_caliente_odds.py`: bump de referencia a v1.39.1.
+- `tests/fixtures/caliente_debug_text_multiline.txt`: fixture de texto multiline
+  con los 9 partidos reales de Liga MX (formato Chrome normal de Caliente).
+  Movido desde `reports/` para respetar que `reports/` permanece ignorado.
+- `tests/test_assisted_odds_import.py`: tests nuevos para:
+  - Parser multiline con 1 partido (Necaxa/-125/Empate/+260/Atlante/+275).
+  - Parser multiline con 9 partidos reales (verifica pares y momios).
+  - No mezcla mercados de campeón/futuros.
+  - `PARSER_NEEDS_REVIEW` cuando hay momios sueltos sin partidos completos.
+  - Deduplicación multiline.
+  - Single-line sigue funcionando (regresión).
+  - Reporte mantiene `ESPERAR / NO ENVIAR`.
+  - Reporte no imprime secretos.
+  - JSON export funciona con multiline.
+
+### Sin cambios (restricciones respetadas)
+- **NO** stealth, **NO** proxy, **NO** bypass, **NO** automatiza login, **NO**
+  guarda credenciales, **NO** imprime secretos.
+- **NO** manda Telegram, **NO** cambia/cierra picks.
+- Decisión general siempre `ESPERAR / NO ENVIAR`. Nunca marca un pick listo.
+
 ## v1.39.0 — Assisted Sportsbook Odds Import
 
 ### Añadido
