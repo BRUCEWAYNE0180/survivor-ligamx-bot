@@ -699,6 +699,131 @@ st
 
 
 # ===========================================================================
+# Tests MIXED LEAGUES SCOPE (v1.39.2 fix — filtrar otras ligas)
+# ===========================================================================
+
+# Ruta al fixture con partidos de otras ligas antes de Liga MX.
+_FIXTURE_MIXED_LEAGUES = BASE_DIR / "tests" / "fixtures" / "caliente_debug_text_mixed_leagues.txt"
+
+
+class TestMixedLeaguesScope(unittest.TestCase):
+    """Parser filtra partidos de otras ligas y solo conserva Liga MX."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.texto = _FIXTURE_MIXED_LEAGUES.read_text(encoding="utf-8")
+
+    def test_solo_9_liga_mx(self):
+        res = aoi.analizar_texto(self.texto, esperados=9)
+        self.assertEqual(res["status"], aoi.STATUS_OK)
+        self.assertEqual(res["total_validos"], 9)
+        self.assertTrue(res["coincide_esperados"])
+
+    def test_no_incluye_austria(self):
+        res = aoi.analizar_texto(self.texto, esperados=9)
+        locales = {e["equipo_local"] for e in res["eventos"]}
+        visitantes = {e["equipo_visitante"] for e in res["eventos"]}
+        todos = locales | visitantes
+        self.assertNotIn("Austria Lustenau", todos)
+        self.assertNotIn("FC Wil", todos)
+
+    def test_no_incluye_randers(self):
+        res = aoi.analizar_texto(self.texto, esperados=9)
+        locales = {e["equipo_local"] for e in res["eventos"]}
+        visitantes = {e["equipo_visitante"] for e in res["eventos"]}
+        todos = locales | visitantes
+        self.assertNotIn("Randers FC", todos)
+        self.assertNotIn("Sonderjyske", todos)
+
+    def test_no_incluye_myanmar(self):
+        res = aoi.analizar_texto(self.texto, esperados=9)
+        locales = {e["equipo_local"] for e in res["eventos"]}
+        visitantes = {e["equipo_visitante"] for e in res["eventos"]}
+        todos = locales | visitantes
+        for equipo in ("Thitsar Arman FC U20", "Sagaing United FC U20",
+                       "Yangon City FC U20", "Yangon United FC U20"):
+            self.assertNotIn(equipo, todos)
+
+    def test_no_incluye_femenil(self):
+        res = aoi.analizar_texto(self.texto, esperados=9)
+        locales = {e["equipo_local"] for e in res["eventos"]}
+        visitantes = {e["equipo_visitante"] for e in res["eventos"]}
+        todos = locales | visitantes
+        self.assertNotIn("Tigres Femenil", todos)
+        self.assertNotIn("América Femenil", todos)
+
+    def test_partidos_correctos_liga_mx(self):
+        res = aoi.analizar_texto(self.texto, esperados=9)
+        pares = [(e["equipo_local"], e["equipo_visitante"]) for e in res["eventos"]]
+        esperados = [
+            ("Necaxa", "Atlante"),
+            ("Tijuana Xolos de Caliente", "Tigres UANL"),
+            ("Atlético San Luis", "Cruz Azul"),
+            ("León", "Atlas"),
+            ("FC Juárez", "Puebla"),
+            ("Pumas UNAM", "Pachuca"),
+            ("Chivas Guadalajara", "Toluca"),
+            ("Monterrey", "Santos Laguna"),
+            ("Querétaro FC", "América"),
+        ]
+        for par in esperados:
+            self.assertIn(par, pares, f"{par} no encontrado")
+
+    def test_hora_y_fecha_preservadas(self):
+        res = aoi.analizar_texto(self.texto, esperados=9)
+        necaxa = next(e for e in res["eventos"] if e["equipo_local"] == "Necaxa")
+        self.assertEqual(necaxa["hora"], "18:00")
+        self.assertEqual(necaxa["fecha"], "16 Jul")
+
+    def test_reporte_esperar(self):
+        res = aoi.analizar_texto(self.texto, esperados=9)
+        reporte = aoi.render_report(res)
+        self.assertIn("ESPERAR / NO ENVIAR", reporte)
+        self.assertNotIn("CERRAR", reporte)
+
+
+class TestMixedLeaguesInline(unittest.TestCase):
+    """Test inline con 2 partidos externos + 1 Liga MX."""
+
+    def test_filtra_externo_conserva_liga_mx(self):
+        texto = """\
+Austrian Football League
+18:30
+16 Jul
+★
+Austria Lustenau
++200
+Empate
++220
+★
+FC Wil
++140
+1 >
+st
+Liga MX
+18:00
+16 Jul
+★
+Necaxa
+-125
+Empate
++260
+★
+Atlante
++275
+1 >
+st
+"""
+        res = aoi.analizar_texto(texto, esperados=1)
+        self.assertEqual(res["total_validos"], 1)
+        self.assertEqual(res["eventos"][0]["equipo_local"], "Necaxa")
+        self.assertEqual(res["eventos"][0]["equipo_visitante"], "Atlante")
+        # Austria no debe aparecer.
+        locales = {e["equipo_local"] for e in res["eventos"]}
+        self.assertNotIn("Austria Lustenau", locales)
+
+
+# ===========================================================================
 # Garantías de seguridad/cumplimiento sobre el código fuente
 # ===========================================================================
 class TestRestriccionesCodigoFuente(unittest.TestCase):

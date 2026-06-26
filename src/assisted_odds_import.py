@@ -2,7 +2,7 @@
 """
 assisted_odds_import.py — Assisted Sportsbook Odds Import (Survivor Liga MX).
 
-v1.39.1.
+v1.39.2.
 
 Lógica PURA de parseo/validación/reporte para una importación ASISTIDA POR
 USUARIO de momios 1X2 desde un sportsbook (ej. Caliente Liga MX).
@@ -516,16 +516,180 @@ def _hay_momios_sueltos(texto: str) -> bool:
 
 
 # ---------------------------------------------------------------------------
+# Scope Liga MX: recorte de sección + filtro por equipos (v1.39.2 fix)
+# ---------------------------------------------------------------------------
+
+# Marcadores que indican el inicio de la sección Liga MX en el texto de Caliente.
+_LIGA_MX_START_MARKERS = re.compile(
+    r"(Liga\s+MX\s*[-–—]?\s*Partidos"
+    r"|Liga\s+MX"
+    r"|Mexico\s+Liga\s+MX"
+    r"|Top\s+Ligas\s+Mexico)",
+    re.IGNORECASE,
+)
+
+# Marcadores que indican el fin de la sección Liga MX (inicio de otra liga).
+_LIGA_MX_END_MARKERS = re.compile(
+    r"^("
+    r"Liga\s+MX\s+Femenil"
+    r"|Liga\s+de\s+Expansi[oó]n"
+    r"|Premier\s+League"
+    r"|La\s+Liga"
+    r"|Serie\s+A"
+    r"|Bundesliga"
+    r"|Ligue\s+1"
+    r"|MLS"
+    r"|Copa\s+Libertadores"
+    r"|Copa\s+Sudamericana"
+    r"|Champions\s+League"
+    r"|Europa\s+League"
+    r"|Austrian\s+Football"
+    r"|Danish\s+Superliga"
+    r"|Myanmar"
+    r"|[A-Z][a-z]+\s+Football\s+League"
+    r"|[A-Z][a-z]+\s+Liga"
+    r"|[A-Z][a-z]+\s+League"
+    r"|[A-Z][a-z]+\s+Premier"
+    r"|[A-Z][a-z]+\s+Division"
+    r").*$",
+    re.IGNORECASE | re.MULTILINE,
+)
+
+# Equipos Liga MX conocidos (normalizados, sin acentos, lower).
+# Usados como filtro secundario cuando el scope por sección no es confiable.
+_EQUIPOS_LIGA_MX_NORM = frozenset([
+    "necaxa", "atlante",
+    "tijuana xolos de caliente", "tijuana", "xolos",
+    "tigres uanl", "tigres",
+    "atletico san luis", "atletico de san luis", "san luis",
+    "cruz azul",
+    "leon", "club leon",
+    "atlas",
+    "fc juarez", "juarez", "bravos",
+    "puebla",
+    "pumas unam", "pumas",
+    "pachuca",
+    "chivas guadalajara", "chivas", "guadalajara",
+    "toluca",
+    "monterrey", "rayados",
+    "santos laguna", "santos",
+    "queretaro fc", "queretaro", "gallos",
+    "america", "club america",
+    "mazatlan", "mazatlan fc",
+])
+
+
+def _recortar_seccion_liga_mx(texto: str) -> str:
+    """
+    Intenta recortar el texto a solo la sección de Liga MX.
+
+    Solo se activa si detecta marcadores de OTRAS ligas en el texto (indicando
+    que hay un bloque multi-liga). Si no hay otras ligas, devuelve el texto
+    completo sin modificar.
+
+    Busca un marcador de inicio ("Liga MX") y luego un marcador de fin
+    (otra liga). Si encuentra ambos, devuelve solo esa porción.
+    """
+    # Solo activar scoping si hay evidencia de otras ligas.
+    otras_ligas = re.findall(
+        r"(?:Austrian Football|Danish Superliga|Myanmar|Premier League|"
+        r"La Liga|Serie A|Bundesliga|Ligue 1|MLS|Copa Libertadores|"
+        r"Liga de Expansi[oó]n|Liga MX Femenil)",
+        texto,
+        re.IGNORECASE,
+    )
+    if not otras_ligas:
+        return texto  # No hay multi-liga; no recortar.
+
+    # Buscar el ÚLTIMO match de "Liga MX" que NO sea "Liga MX Femenil" ni
+    # "Ganador Liga MX" ni "Campeón Liga MX" como inicio de sección.
+    inicio = None
+    for m in _LIGA_MX_START_MARKERS.finditer(texto):
+        # Verificar que no sea "Liga MX Femenil" ni dentro de "Ganador Liga MX".
+        context_after = texto[m.start():m.start() + 30]
+        if "femenil" in context_after.lower():
+            continue
+        context_before = texto[max(0, m.start() - 15):m.start()]
+        if re.search(r"(ganador|campe[oó]n|winner)", context_before, re.IGNORECASE):
+            continue
+        inicio = m.start()
+
+    if inicio is None:
+        return texto  # No se encontró marcador de Liga MX válido.
+
+    seccion = texto[inicio:]
+
+    # Buscar fin de sección (otra liga después del bloque Liga MX).
+    fin_match = None
+    for m in _LIGA_MX_END_MARKERS.finditer(seccion):
+        # El primer match podría ser el propio "Liga MX" del inicio, skipear.
+        if m.start() > 10:
+            fin_match = m
+            break
+
+    if fin_match:
+        seccion = seccion[: fin_match.start()]
+
+    return seccion
+
+
+def _es_equipo_liga_mx(nombre: str) -> bool:
+    """True si el nombre (normalizado) coincide con algún equipo Liga MX."""
+    norm = _norm_equipo(nombre)
+    if not norm:
+        return False
+    # Match exacto primero.
+    if norm in _EQUIPOS_LIGA_MX_NORM:
+        return True
+    # Match parcial: si algún equipo conocido está contenido en el nombre
+    # o el nombre está contenido en algún equipo conocido.
+    for eq in _EQUIPOS_LIGA_MX_NORM:
+        if eq in norm or norm in eq:
+            return True
+    return False
+
+
+def _filtrar_eventos_liga_mx(
+    eventos: List[Dict[str, Any]],
+) -> List[Dict[str, Any]]:
+    """
+    Filtra eventos para conservar solo los que tengan AL MENOS un equipo
+    reconocido de Liga MX (local o visitante).
+
+    Si TODOS los eventos ya son Liga MX, retorna sin cambios.
+    Si NINGUNO es Liga MX, retorna sin cambios (para no perder datos si
+    la lista de equipos no está actualizada).
+    """
+    if not eventos:
+        return eventos
+
+    liga_mx = [
+        ev for ev in eventos
+        if _es_equipo_liga_mx(ev.get("equipo_local", ""))
+        or _es_equipo_liga_mx(ev.get("equipo_visitante", ""))
+    ]
+
+    # Si no reconoce ninguno, mejor devolver todos (la lista puede estar
+    # desactualizada) en vez de perder datos.
+    if not liga_mx:
+        return eventos
+
+    return liga_mx
+
+
+# ---------------------------------------------------------------------------
 # Pipeline principal
 # ---------------------------------------------------------------------------
 def analizar_texto(texto: str, esperados: int = 9) -> Dict[str, Any]:
     """
     Pipeline completo de parseo sobre el texto visible.
 
-    Estrategia (v1.39.1):
+    Estrategia (v1.39.2):
     1. Intenta el parser single-line (regex original).
-    2. Si no produce resultados, intenta el parser multiline.
-    3. Si ninguno produce resultados pero hay momios sueltos en el texto,
+    2. Si no produce resultados, recorta a la sección Liga MX y aplica el
+       parser multiline.
+    3. Aplica filtro de equipos Liga MX para excluir partidos de otras ligas.
+    4. Si ninguno produce resultados pero hay momios sueltos en el texto,
        reporta PARSER_NEEDS_REVIEW en vez de NO_MATCHES_FOUND.
 
     Devuelve un dict con eventos válidos/deduplicados, conteos, eventos
@@ -540,7 +704,9 @@ def analizar_texto(texto: str, esperados: int = 9) -> Dict[str, Any]:
     # --- Paso 2: parser multiline (solo si single-line no encontró nada) ---
     crudos_ml: List[Dict[str, Any]] = []
     if not crudos_sl:
-        crudos_ml = extraer_eventos_multiline(texto)
+        # Recortar a sección Liga MX antes del multiline parser.
+        texto_seccion = _recortar_seccion_liga_mx(texto)
+        crudos_ml = extraer_eventos_multiline(texto_seccion)
 
     crudos = crudos_sl if crudos_sl else crudos_ml
     formato_detectado = "single-line" if crudos_sl else ("multiline" if crudos_ml else "ninguno")
@@ -552,6 +718,9 @@ def analizar_texto(texto: str, esperados: int = 9) -> Dict[str, Any]:
             validos_pre.append(ev)
         else:
             invalidos.append(ev)
+
+    # --- Filtro de scope Liga MX (excluir partidos de otras ligas) ---
+    validos_pre = _filtrar_eventos_liga_mx(validos_pre)
 
     eventos, duplicados = deduplicar(validos_pre)
 
