@@ -823,6 +823,61 @@ st
         self.assertNotIn("Austria Lustenau", locales)
 
 
+class TestFallbackFullText(unittest.TestCase):
+    """Si el recorte de sección falla, fallback a texto completo + filtro."""
+
+    def test_fallback_cuando_recorte_no_encuentra_liga_mx(self):
+        # Texto que tiene otras ligas y Liga MX pero sin marcador "Liga MX"
+        # claro que el recorte pueda usar (simula DOM raro).
+        texto = """\
+Austrian Football League
+18:30
+16 Jul
+★
+Austria Lustenau
++200
+Empate
++220
+★
+FC Wil
++140
+1 >
+st
+18:00
+16 Jul
+★
+Necaxa
+-125
+Empate
++260
+★
+Atlante
++275
+1 >
+st
+★
+20:00
+16 Jul
+★
+Chivas Guadalajara
++120
+Empate
++235
+★
+Toluca
++210
+1 >
+st
+"""
+        res = aoi.analizar_texto(texto, esperados=2)
+        self.assertEqual(res["status"], aoi.STATUS_OK)
+        self.assertEqual(res["total_validos"], 2)
+        pares = {(e["equipo_local"], e["equipo_visitante"]) for e in res["eventos"]}
+        self.assertIn(("Necaxa", "Atlante"), pares)
+        self.assertIn(("Chivas Guadalajara", "Toluca"), pares)
+        self.assertNotIn(("Austria Lustenau", "FC Wil"), pares)
+
+
 # ===========================================================================
 # Garantías de seguridad/cumplimiento sobre el código fuente
 # ===========================================================================

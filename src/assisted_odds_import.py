@@ -704,9 +704,14 @@ def analizar_texto(texto: str, esperados: int = 9) -> Dict[str, Any]:
     # --- Paso 2: parser multiline (solo si single-line no encontró nada) ---
     crudos_ml: List[Dict[str, Any]] = []
     if not crudos_sl:
-        # Recortar a sección Liga MX antes del multiline parser.
+        # Estrategia: parsear texto completo, luego filtrar por equipos Liga MX.
+        # Si el recorte por sección produce resultados, usarlo; sino fallback
+        # a texto completo (más robusto ante variaciones del DOM real).
         texto_seccion = _recortar_seccion_liga_mx(texto)
         crudos_ml = extraer_eventos_multiline(texto_seccion)
+        # Fallback: si el recorte no produjo eventos, parsear texto completo.
+        if not crudos_ml and texto_seccion != texto:
+            crudos_ml = extraer_eventos_multiline(texto)
 
     crudos = crudos_sl if crudos_sl else crudos_ml
     formato_detectado = "single-line" if crudos_sl else ("multiline" if crudos_ml else "ninguno")
