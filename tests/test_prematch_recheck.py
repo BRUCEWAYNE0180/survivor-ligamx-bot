@@ -84,6 +84,18 @@ class TestParseKickoff(unittest.TestCase):
         self.assertIsNone(pr.parse_kickoff("2026-07-16", "PENDIENTE_CONFIRMAR"))
         self.assertIsNone(pr.parse_kickoff("", ""))
 
+    def test_fecha_iso_completa_sin_hora(self):
+        # fecha ISO completa con 'T' y hora vacía/pendiente -> usa la hora del ISO.
+        self.assertEqual(pr.parse_kickoff("2026-07-16T19:00:00", ""), datetime(2026, 7, 16, 19, 0))
+        self.assertEqual(
+            pr.parse_kickoff("2026-07-16T19:00:00", "PENDIENTE_CONFIRMAR"),
+            datetime(2026, 7, 16, 19, 0),
+        )
+
+    def test_solo_fecha_sin_hora_es_none(self):
+        # Fecha sin hora ISO y sin hora separada -> no se puede programar -> None.
+        self.assertIsNone(pr.parse_kickoff("2026-07-16", ""))
+
 
 class TestEvaluarPartido(unittest.TestCase):
     def test_plan_blocked_agrega_warning(self):

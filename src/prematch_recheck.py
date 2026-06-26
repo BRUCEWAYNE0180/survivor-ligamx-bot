@@ -128,17 +128,21 @@ def parse_kickoff(fecha: str, hora: str) -> Optional[datetime]:
     if not f or "pendiente" in f.lower():
         return None
 
-    # Si la fecha ya trae 'T' ISO completa.
-    candidatos = []
+    # Caso 1: la fecha ya trae hora ISO completa (con 'T'); se intenta aunque
+    # 'hora' venga vacía o pendiente.
     if "t" in f.lower() and len(f) >= 15:
-        candidatos.append(f)
+        try:
+            return datetime.fromisoformat(f).replace(tzinfo=None)
+        except Exception:
+            pass  # seguimos con los demás intentos
 
-    if h and "pendiente" not in h.lower():
+    hora_usable = bool(h) and "pendiente" not in h.lower()
+
+    # Caso 2: fecha (solo día) + hora separada.
+    candidatos: list[str] = []
+    if hora_usable:
         candidatos.append(f"{f}T{h}")
         candidatos.append(f"{f} {h}")
-    else:
-        # Sin hora usable: no se puede programar ventana fina.
-        return None
 
     for c in candidatos:
         c = c.replace(" ", "T", 1) if " " in c and "T" not in c else c
@@ -147,12 +151,12 @@ def parse_kickoff(fecha: str, hora: str) -> Optional[datetime]:
         except Exception:
             continue
 
-    # Último intento: fecha + hora HH:MM manual.
+    # Último intento manual: fecha YYYY-MM-DD + hora HH:MM.
     try:
         import re
 
         mf = re.search(r"(\d{4})-(\d{2})-(\d{2})", f)
-        mh = re.search(r"(\d{1,2}):(\d{2})", h)
+        mh = re.search(r"(\d{1,2}):(\d{2})", h) if hora_usable else None
         if mf and mh:
             return datetime(
                 int(mf.group(1)), int(mf.group(2)), int(mf.group(3)),
