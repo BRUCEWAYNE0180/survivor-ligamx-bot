@@ -33,7 +33,7 @@ from typing import Any, Dict, List, Optional, Tuple
 # ---------------------------------------------------------------------------
 # Constantes
 # ---------------------------------------------------------------------------
-VERSION = "v1.39.1"
+VERSION = "v1.39.2"
 
 # Decisión operativa: este flujo asistido NUNCA cierra ni envía un pick.
 DEC_ESPERAR = "ESPERAR / NO ENVIAR"
@@ -203,28 +203,31 @@ def extraer_eventos_crudos(texto: str) -> List[Dict[str, Any]]:
 
 
 # ---------------------------------------------------------------------------
-# Parseo MULTILINE (nuevo en v1.39.1)
+# Parseo MULTILINE (v1.39.1 base, v1.39.2 layout-aware)
 #
-# Caliente cuando se copia desde Chrome normal produce bloques como:
+# Caliente cuando se copia desde Chrome produce bloques con layout noise:
 #
+#   18:00
+#   16 Jul
+#   ★
 #   Necaxa
 #   -125
 #   Empate
 #   +260
+#   ★
 #   Atlante
 #   +275
+#   1 >
+#   st
 #
-# La estrategia:
+# La estrategia v1.39.2:
 # 1. Dividir el texto en líneas, eliminar líneas vacías y espacios laterales.
-# 2. Detectar si hay palabras clave de mercados futuros/campeón y saltarlas.
-# 3. Construir una máquina de estados que avanza token a token buscando la
-#    secuencia: EQUIPO → MOMIO → "Empate"/"Draw"/"X" → MOMIO → EQUIPO → MOMIO.
-#    - Un EQUIPO es una línea que NO es momio y NO es etiqueta Empate/Draw/X.
-#    - Un MOMIO es una línea que cumple es_momio_americano_valido().
-#    - "Empate/Draw/X" es una línea que coincide con _DRAW_LABELS.
-# 4. Ignorar bloques donde se detecte keyword de campeón/futuro.
-# 5. Si se completa la secuencia de 6 tokens, guardar el evento. Resetear
-#    máquina de estados ante cualquier token que rompa la secuencia.
+# 2. PRE-FILTRAR líneas de layout puro (★, "1 >", "st", etc.) — se ignoran
+#    en cualquier estado sin resetear la máquina.
+# 3. Detectar líneas de HORA (HH:MM) y FECHA (DD Mon) y capturarlas como
+#    contexto para el siguiente partido, sin alterar el estado.
+# 4. Detectar palabras clave de mercados futuros/campeón y resetear.
+# 5. Construir la secuencia: EQUIPO → MOMIO → Empate/Draw/X → MOMIO → EQUIPO → MOMIO.
 # ---------------------------------------------------------------------------
 
 # Tokens de la máquina de estados multiline.
@@ -234,6 +237,81 @@ _ML_WAIT_DRAW_LBL = 2    # esperando etiqueta Empate/Draw/X
 _ML_WAIT_MD = 3          # esperando momio empate
 _ML_WAIT_VISIT = 4       # esperando nombre equipo visitante
 _ML_WAIT_MV = 5          # esperando momio visitante
+
+# ---------------------------------------------------------------------------
+# Detectores de tokens de layout (v1.39.2)
+# ---------------------------------------------------------------------------
+
+# Patrón de hora: HH:MM (ej. 18:00, 20:00, 9:30)
+_RE_HORA = re.compile(r"^\d{1,2}:\d{2}$")
+
+# Patrón de fecha corta: DD Mon (ej. "16 Jul", "3 Ago", "17 Julio")
+_RE_FECHA_CORTA = re.compile(
+    r"^(\d{1,2})\s+([A-Za-zÁÉÍÓÚÜÑáéíóúüñ]{3,12})\.?$"
+)
+
+# Tokens de layout visual que siempre se ignoran (case-insensitive match).
+_LAYOUT_JUNK = frozenset([
+    "★", "☆", "⭐",
+    "1 >", "1>",
+    "st",
+    "1st",
+    "2nd",
+    "3rd",
+    ">",
+    "ver más", "ver mas",
+    "más mercados", "mas mercados",
+    "próximos eventos", "proximos eventos",
+])
+
+# Patrones regex adicionales de layout a ignorar.
+_RE_LAYOUT_PATTERNS = re.compile(
+    r"^("
+    r"\d+\s*>"           # "1 >", "2 >", etc.
+    r"|ver\s+m[aá]s.*"   # "Ver más mercados"
+    r"|m[aá]s\s+mercados"
+    r"|pr[oó]ximos?\s+eventos?"
+    r"|apuestas?\s+f[uú]tbol.*"  # "Apuestas Fútbol México"
+    r"|liga\s+mx"
+    r"|local\s+empate\s+visitante"  # header row
+    r")$",
+    re.IGNORECASE,
+)
+
+
+def _es_layout_junk(linea: str) -> bool:
+    """True si la línea es un token visual de layout que debe ignorarse."""
+    s = linea.strip()
+    if not s:
+        return True
+    if s.lower() in _LAYOUT_JUNK or s in _LAYOUT_JUNK:
+        return True
+    if _RE_LAYOUT_PATTERNS.match(s):
+        return True
+    return False
+
+
+def _es_hora(linea: str) -> bool:
+    """True si la línea es solo una hora HH:MM."""
+    return bool(_RE_HORA.match(linea.strip()))
+
+
+def _es_fecha_corta(linea: str) -> Optional[Tuple[int, str, int]]:
+    """
+    Si la línea es 'DD Mon', devuelve (dia, mes_texto, mes_num).
+    Si no, devuelve None.
+    """
+    m = _RE_FECHA_CORTA.match(linea.strip())
+    if not m:
+        return None
+    dia = int(m.group(1))
+    mes_txt = m.group(2)
+    mes_num = _mes_a_numero(mes_txt)
+    if mes_num == 0:
+        return None
+    if not (1 <= dia <= 31):
+        return None
+    return (dia, mes_txt, mes_num)
 
 
 def _es_etiqueta_empate(linea: str) -> bool:
@@ -248,6 +326,8 @@ def _es_linea_equipo(linea: str) -> bool:
     - No tiene solo dígitos.
     - Tiene al menos 2 caracteres.
     - No contiene palabras clave de campeón/futuro (evitar mezcla de mercados).
+    - No es layout junk.
+    - No es hora ni fecha corta.
     """
     s = linea.strip()
     if len(s) < 2:
@@ -260,6 +340,12 @@ def _es_linea_equipo(linea: str) -> bool:
         return False
     if _FUTURO_KEYWORDS.search(s):
         return False
+    if _es_layout_junk(s):
+        return False
+    if _es_hora(s):
+        return False
+    if _es_fecha_corta(s) is not None:
+        return False
     return True
 
 
@@ -267,20 +353,12 @@ def extraer_eventos_multiline(texto: str) -> List[Dict[str, Any]]:
     """
     Extrae eventos 1X2 de texto multiline copiado desde Caliente en Chrome.
 
-    Formato esperado (una línea por token):
-        Necaxa
-        -125
-        Empate
-        +260
-        Atlante
-        +275
+    v1.39.2: soporta tokens de layout real (★, 1 >, st, HH:MM, DD Mon).
+    Los tokens de layout se ignoran transparentemente sin resetear el estado.
+    Las líneas de hora/fecha se capturan como contexto para el próximo evento.
 
     La máquina de estados avanza por 6 pasos:
         WAIT_LOCAL → WAIT_ML → WAIT_DRAW_LBL → WAIT_MD → WAIT_VISIT → WAIT_MV
-
-    - Líneas de campeón/futuro resetean el estado para no mezclar mercados.
-    - Si un token no encaja en el estado actual, se retrocede y se reclasifica
-      el token desde el estado inicial donde corresponda.
     """
     lineas = [ln.strip() for ln in str(texto or "").splitlines()]
     lineas = [ln for ln in lineas if ln]  # eliminar vacías
@@ -294,22 +372,43 @@ def extraer_eventos_multiline(texto: str) -> List[Dict[str, Any]]:
     momio_empate: str = ""
     visitante: str = ""
 
+    # Contexto de hora/fecha (se acumula y se usa en el siguiente evento).
+    ctx_hora: str = ""
+    ctx_dia: int = 0
+    ctx_mes_texto: str = ""
+    ctx_mes: int = 0
+
     def _reset() -> None:
         nonlocal estado, local, momio_local, momio_empate, visitante
         estado = _ML_WAIT_LOCAL
         local = momio_local = momio_empate = visitante = ""
 
     for linea in lineas:
-        # Mercado de campeón/futuro → reset total para evitar mezcla.
+        # --- Paso 0: layout junk → ignorar sin alterar estado ---
+        if _es_layout_junk(linea):
+            continue
+
+        # --- Paso 1: hora HH:MM → capturar contexto, no altera estado ---
+        if _es_hora(linea):
+            ctx_hora = linea.strip()
+            continue
+
+        # --- Paso 2: fecha DD Mon → capturar contexto, no altera estado ---
+        fecha_info = _es_fecha_corta(linea)
+        if fecha_info is not None:
+            ctx_dia, ctx_mes_texto, ctx_mes = fecha_info
+            continue
+
+        # --- Paso 3: mercado futuro/campeón → reset ---
         if _FUTURO_KEYWORDS.search(linea):
             _reset()
             continue
 
+        # --- Paso 4: máquina de estados principal ---
         if estado == _ML_WAIT_LOCAL:
             if _es_linea_equipo(linea):
                 local = linea
                 estado = _ML_WAIT_ML
-            # Cualquier otra línea (momios sueltos, cabeceras) se ignora.
 
         elif estado == _ML_WAIT_ML:
             if es_momio_americano_valido(linea):
@@ -318,7 +417,6 @@ def extraer_eventos_multiline(texto: str) -> List[Dict[str, Any]]:
             elif _es_linea_equipo(linea):
                 # La línea anterior era ruido; esta podría ser el verdadero local.
                 local = linea
-                # estado permanece _ML_WAIT_ML
             else:
                 _reset()
 
@@ -350,13 +448,16 @@ def extraer_eventos_multiline(texto: str) -> List[Dict[str, Any]]:
         elif estado == _ML_WAIT_MV:
             if es_momio_americano_valido(linea):
                 momio_visitante = linea
-                # Evento completo — fecha/hora ausentes en multiline puro.
+                # Evento completo — usar hora/fecha del contexto acumulado.
+                fecha_str = (
+                    f"{ctx_dia:02d} {ctx_mes_texto}" if ctx_dia and ctx_mes_texto else ""
+                )
                 ev: Dict[str, Any] = {
-                    "hora": "",
-                    "dia": 0,
-                    "mes_texto": "",
-                    "mes": 0,
-                    "fecha": "",
+                    "hora": ctx_hora,
+                    "dia": ctx_dia,
+                    "mes_texto": ctx_mes_texto,
+                    "mes": ctx_mes,
+                    "fecha": fecha_str,
                     "equipo_local": local,
                     "equipo_visitante": visitante,
                     "momio_local": momio_local,

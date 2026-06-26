@@ -1,5 +1,45 @@
 # Changelog — Survivor Liga MX Bot
 
+## v1.39.2 — Real Caliente Layout Token Parser Fix
+
+### Corregido / Mejorado
+- `src/assisted_odds_import.py`: el parser multiline ahora soporta el formato
+  REAL de Caliente copiado desde Chrome, que incluye tokens de layout entre los
+  datos de partidos:
+  - Tokens ignorados transparentemente (no resetean la máquina de estados):
+    `★`, `1 >`, `st`, líneas vacías, cabeceras ("Apuestas Fútbol México",
+    "Liga MX", "Próximos eventos", etc.).
+  - Líneas de hora (`HH:MM`) se capturan como contexto y se asignan al
+    siguiente partido detectado.
+  - Líneas de fecha (`DD Mon`, ej. "16 Jul") se capturan como contexto y se
+    asignan al siguiente partido detectado.
+  - `_es_linea_equipo` ahora rechaza layout junk, horas y fechas para evitar
+    que se clasifiquen como nombres de equipo.
+  - Los 9 partidos reales de Liga MX se parsean correctamente con hora y fecha:
+    Necaxa 18:00 16 Jul, Tijuana 20:00 16 Jul, Atlético San Luis 17:00 17 Jul,
+    León 19:00 17 Jul, FC Juárez 21:00 17 Jul, Pumas UNAM 12:00 18 Jul,
+    Chivas 17:00 18 Jul, Monterrey 19:00 18 Jul, Querétaro FC 21:00 18 Jul.
+- `tests/fixtures/caliente_debug_text_real_layout.txt`: fixture con layout real
+  (★, 1 >, st, hora, fecha) para 9 partidos.
+- `tests/test_assisted_odds_import.py`: 19 tests nuevos para formato real:
+  - 2 partidos con layout tokens (hora, fecha, ★, 1 >, st).
+  - 9 partidos desde fixture real (verifica pares, momios, hora, fecha).
+  - No mezcla mercados futuros/campeón entre layout tokens.
+  - Layout tokens no se confunden con nombres de equipo.
+
+### Compatibilidad conservada
+- Single-line v1.39.0: sigue funcionando sin cambios.
+- Multiline limpio v1.39.1: sigue funcionando sin cambios.
+- Filtro de futuros/campeón: funciona con y sin layout tokens.
+- `PARSER_NEEDS_REVIEW`: sigue activo para momios sueltos sin partidos.
+- Deduplicación: funciona en todos los formatos.
+
+### Sin cambios (restricciones respetadas)
+- **NO** stealth, **NO** proxy, **NO** bypass, **NO** automatiza login, **NO**
+  guarda credenciales, **NO** imprime secretos.
+- **NO** manda Telegram, **NO** cambia/cierra picks.
+- Decisión general siempre `ESPERAR / NO ENVIAR`. Nunca marca un pick listo.
+
 ## v1.39.1 — Caliente Multiline Parser Fix + Chrome Capture Prep
 
 ### Corregido / Mejorado
