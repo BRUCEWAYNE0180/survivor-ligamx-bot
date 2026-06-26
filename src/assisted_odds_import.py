@@ -638,6 +638,9 @@ def _es_equipo_liga_mx(nombre: str) -> bool:
     norm = _norm_equipo(nombre)
     if not norm:
         return False
+    # Excluir variantes femenil (Liga MX Femenil es torneo separado).
+    if "femenil" in norm:
+        return False
     # Match exacto primero.
     if norm in _EQUIPOS_LIGA_MX_NORM:
         return True
@@ -686,8 +689,8 @@ def analizar_texto(texto: str, esperados: int = 9) -> Dict[str, Any]:
 
     Estrategia (v1.39.2):
     1. Intenta el parser single-line (regex original).
-    2. Si no produce resultados, recorta a la sección Liga MX y aplica el
-       parser multiline.
+    2. Si no produce resultados, parsea TODO el texto completo con el parser
+       multiline.
     3. Aplica filtro de equipos Liga MX para excluir partidos de otras ligas.
     4. Si ninguno produce resultados pero hay momios sueltos en el texto,
        reporta PARSER_NEEDS_REVIEW en vez de NO_MATCHES_FOUND.
@@ -704,14 +707,8 @@ def analizar_texto(texto: str, esperados: int = 9) -> Dict[str, Any]:
     # --- Paso 2: parser multiline (solo si single-line no encontró nada) ---
     crudos_ml: List[Dict[str, Any]] = []
     if not crudos_sl:
-        # Estrategia: parsear texto completo, luego filtrar por equipos Liga MX.
-        # Si el recorte por sección produce resultados, usarlo; sino fallback
-        # a texto completo (más robusto ante variaciones del DOM real).
-        texto_seccion = _recortar_seccion_liga_mx(texto)
-        crudos_ml = extraer_eventos_multiline(texto_seccion)
-        # Fallback: si el recorte no produjo eventos, parsear texto completo.
-        if not crudos_ml and texto_seccion != texto:
-            crudos_ml = extraer_eventos_multiline(texto)
+        # Parsear TODO el texto completo primero.
+        crudos_ml = extraer_eventos_multiline(texto)
 
     crudos = crudos_sl if crudos_sl else crudos_ml
     formato_detectado = "single-line" if crudos_sl else ("multiline" if crudos_ml else "ninguno")

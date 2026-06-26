@@ -781,6 +781,31 @@ class TestMixedLeaguesScope(unittest.TestCase):
         self.assertIn("ESPERAR / NO ENVIAR", reporte)
         self.assertNotIn("CERRAR", reporte)
 
+    def test_multiline_parser_full_text_finds_more_than_9_raw(self):
+        """El parser multiline sobre texto completo detecta >9 eventos crudos
+        (incluyendo otras ligas), y el pipeline filtra a solo 9 Liga MX."""
+        # Verificar que extraer_eventos_multiline sobre el texto completo
+        # produce mas de 9 eventos (incluye otras ligas).
+        crudos = aoi.extraer_eventos_multiline(self.texto)
+        self.assertGreater(len(crudos), 9,
+                           "El parser multiline debe detectar >9 eventos en "
+                           "texto con ligas mixtas antes del filtro Liga MX")
+
+    def test_excluded_teams_not_in_pipeline_output(self):
+        """Equipos de otras ligas no deben aparecer en la salida del pipeline."""
+        res = aoi.analizar_texto(self.texto, esperados=9)
+        locales = {e["equipo_local"] for e in res["eventos"]}
+        visitantes = {e["equipo_visitante"] for e in res["eventos"]}
+        todos = locales | visitantes
+        excluidos = [
+            "Austria Lustenau", "FC Wil", "Randers FC", "Sonderjyske",
+            "Thitsar Arman FC U20", "Sagaing United FC U20",
+            "Yangon City FC U20", "Yangon United FC U20",
+        ]
+        for equipo in excluidos:
+            self.assertNotIn(equipo, todos,
+                             f"{equipo} no debe estar en resultados Liga MX")
+
 
 class TestMixedLeaguesInline(unittest.TestCase):
     """Test inline con 2 partidos externos + 1 Liga MX."""
