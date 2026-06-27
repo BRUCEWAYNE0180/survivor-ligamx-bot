@@ -6,7 +6,6 @@ from datetime import datetime, timedelta
 
 app = FastAPI(title="Survivor LigaMX API")
 
-# Permitir peticiones desde cualquier origen
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -20,12 +19,35 @@ def refresh_cache():
     global PICKS_CACHE
     try:
         df = pd.read_parquet("data_kiro/ligamx_odds_clean.parquet")
-        valid = df[(df["VIG"] < 15) & (df["expected_value"] > 0.04)].copy()
+        # Usa el nombre real de la columna
+        valid = df[df["vig_pct"] < 15].copy()
+        
+        # Calcula EV y Kelly fraccionario (25%, tope 8%) para el mercado 1
+        valid["expected_value"] = valid["true_prob_1"] * valid["momio_1"] - 1
+        b = valid["momio_1"] - 1
+        valid["kelly_stake"] = (b * valid["true_prob_1"] - (1 - valid["true_prob_1"])) / b
+        valid["kelly_stake"] = (valid["kelly_stake"] * 0.25).clip(0, 8)  # 25% Kelly, máx 8%
+        
+        # Filtra picks con EV positivo > 4%
+        valid = valid[(valid["expected_value"] > 0.04) & (valid["momio_1"] > 1)].copy()
         valid = valid.sort_values("timestamp", ascending=False).head(10)
+        
+        # Mapea a formato esperado por el frontend
+        picks_out = []
+        for _, row in valid.iterrows():
+            picks_out.append({
+                "match": f"Liga {row.get('id_liga','')} | M {row.get('id_mercado','')}",
+                "true_prob": float(row["true_prob_1"]),
+                "expected_value": float(row["expected_value"]),
+                "kelly_stake": float(row["kelly_stake"]),
+                "market": "1 (Local)",
+                "timestamp": str(row["timestamp"])
+            })
+            
         PICKS_CACHE = {
             "status": "active",
             "last_update": datetime.utcnow().isoformat() + "Z",
-            "picks": valid.reset_index(drop=True).to_dict(orient="records")
+            "picks": picks_out
         }
     except Exception as e:
         PICKS_CACHE = {"status": "error", "message": str(e), "last_update": None}
