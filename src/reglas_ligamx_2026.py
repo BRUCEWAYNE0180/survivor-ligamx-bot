@@ -7,6 +7,11 @@ from datetime import datetime, date
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
+try:
+    from reglas_liga_mx import formato_liguilla
+except ImportError:  # pragma: no cover
+    from src.reglas_liga_mx import formato_liguilla
+
 
 BASE_DIR = Path(__file__).resolve().parents[1]
 JORNADAS_PATH = BASE_DIR / "data" / "jornadas.json"
@@ -110,10 +115,10 @@ def evaluar_reglas(partido: Dict[str, Any]) -> Dict[str, Any]:
     razones: List[str] = []
     avisos: List[str] = []
 
-    # Nueva estructura competitiva: sin Play-In, top 8 directo.
-    avisos.append(
-        "Formato 2026: sin Play-In; la pelea por top 8 pesa más en fase regular."
-    )
+    # Estructura competitiva vigente (consultada al módulo de reglas).
+    torneo = str(partido.get("torneo") or "")
+    formato = formato_liguilla(torneo)
+    avisos.append(f"Reglas Liga MX 2025–2026 aplicadas. {formato['nota']}")
 
     # Inicio de torneo: modelos menos estables, planteles nuevos, pretemporada.
     if jornada is not None and jornada <= 3:
