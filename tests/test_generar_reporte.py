@@ -41,12 +41,15 @@ class TestExtraerPartidos(unittest.TestCase):
     def test_dict_partidos(self):
         self.assertEqual(len(gr.extraer_partidos({"partidos": [{"a": 1}]})), 1)
 
-    def test_dict_jornadas_doble_conteo_conocido(self):
-        # QUIRK documentado: la clave "jornadas" también empieza con "jornada",
-        # por lo que el segundo loop (keys que empiezan con "jornada") vuelve a
-        # procesar la lista y suma el dict envoltorio como un "partido" extra.
-        # Comportamiento real actual = 3 (2 partidos + 1 dict envoltorio).
+    def test_dict_jornadas_sin_doble_conteo(self):
+        # Tras el fix: la clave "jornadas" se procesa una sola vez (el loop de
+        # claves que empiezan con "jornada" ya no la re-cuenta). Resultado = 2.
         data = {"jornadas": [{"partidos": [{"a": 1}, {"b": 2}]}]}
+        self.assertEqual(len(gr.extraer_partidos(data)), 2)
+
+    def test_dict_jornadaN_sigue_funcionando(self):
+        # Las claves tipo "jornada1", "jornada2" siguen contándose normal.
+        data = {"jornada1": [{"a": 1}], "jornada2": [{"b": 2}, {"c": 3}]}
         self.assertEqual(len(gr.extraer_partidos(data)), 3)
 
     def test_dict_jornadaN(self):
