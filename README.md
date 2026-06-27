@@ -197,6 +197,10 @@ MX.
 
 ![Python](https://img.shields.io/badge/Python-3.9%2B-blue)
 ![License](https://img.shields.io/badge/License-Educational%20Only-green)
+
+![CI](https://github.com/BRUCEWAYNE0180/survivor-ligamx-bot/workflows/CI%2FCD/badge.svg)
+![Dashboard](https://img.shields.io/badge/Dashboard-Live-brightgreen)
+
 ![Status](https://img.shields.io/badge/Status-Production%20Ready-brightgreen)
 
 ## 📡 Arquitectura del Sistema
