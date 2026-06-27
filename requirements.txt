@@ -1,5 +1,6 @@
-requests
+fastapi
+uvicorn[standard]
+pandas
+pyarrow
 python-dotenv
-feedparser
-numpy
-scipy
+requests
