@@ -56,6 +56,10 @@ def extraer_partidos(data: Any) -> List[Dict[str, Any]]:
                 partidos.extend([p for p in jornada["partidos"] if isinstance(p, dict)])
 
     for key, value in data.items():
+        # Se excluye "jornadas" porque ya se procesó arriba; si no, esta clave
+        # (que también empieza con "jornada") volvería a contar su contenido.
+        if key == "jornadas":
+            continue
         if key.startswith("jornada") and isinstance(value, list):
             partidos.extend([p for p in value if isinstance(p, dict)])
 
