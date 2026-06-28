@@ -28,15 +28,11 @@ def ensure_jornadas_file():
             }, f, indent=2)
         log("📝 Archivo jornadas.json creado")
 
-def run_script(script_name, description, args=None):
+def run_script(script_name, description):
     log(f"🔄 {description}")
     try:
-        cmd = [sys.executable, f"src/{script_name}"]
-        if args:
-            cmd.extend(args)
-        
         result = subprocess.run(
-            cmd,
+            [sys.executable, f"src/{script_name}"],
             cwd=BASE_DIR,
             capture_output=True,
             text=True,
@@ -66,20 +62,13 @@ def main():
     
     results = {}
     
-    # 1. Sincronizar fixtures desde API-Football con --apply para escribir a jornadas.json
-    results['fixtures'] = run_script(
-        "api_football_fixtures_sync.py",
-        "Sincronizando fixtures API-Football",
-        args=["--apply"]
+    # 1. Scraper principal - actualiza jornadas.json con datos de The Odds API
+    results['scraper'] = run_script(
+        "scraper.py",
+        "Ejecutando scraper principal (The Odds API)"
     )
     
-    # 2. Sincronizar cuotas desde The Odds API (ahora tiene datos en jornadas.json)
-    results['odds'] = run_script(
-        "sync_odds_api.py",
-        "Sincronizando cuotas The Odds API"
-    )
-    
-    # 3. Procesar datos de confianza
+    # 2. Procesar datos de confianza
     results['confidence'] = run_script(
         "data_confidence.py",
         "Procesando análisis de confianza"
