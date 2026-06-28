@@ -1,7 +1,7 @@
 # Configuración de ruff (linter). Objetivo: cazar BUGS reales (imports/vars sin
 # usar, f-strings vacías, nombres indefinidos) sin pelear con el estilo del
 # código heredado (punto y coma, largo de línea), para tener un gate util y verde.
-target-version = "py39"
+target-version = "py312"
 line-length = 120
 
 [lint]
