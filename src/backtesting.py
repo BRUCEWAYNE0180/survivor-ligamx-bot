@@ -12,7 +12,7 @@ Sin red, sin I/O. NO cierra ni envía picks. Decisión operativa: ESPERAR / NO E
 """
 from __future__ import annotations
 
-from typing import Any, Dict, List, Optional, Sequence
+from typing import Any, Dict, List, Sequence
 
 DEC_ESPERAR = "ESPERAR / NO ENVIAR"
 

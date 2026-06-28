@@ -319,7 +319,7 @@ def preparar_texto_noticias_para_groq(texto: str) -> str:
     salida = [
         encabezado,
         "",
-        f"NOTA: Entrada recortada dentro de aplicar_noticias_ia.py para Groq.",
+        "NOTA: Entrada recortada dentro de aplicar_noticias_ia.py para Groq.",
         f"Máximo noticias enviadas: {GROQ_MAX_NOTICIAS}.",
         f"Máximo caracteres enviados: {GROQ_MAX_INPUT_CHARS}.",
         "Prioridad: bajas confirmadas, lesiones, suspensiones, dudas, convocatorias y ruedas de prensa.",

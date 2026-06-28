@@ -411,7 +411,7 @@ def llamar_ia(
     except NonRotatableAIError:
         raise
 
-    except TechnicalAIError as exc:
+    except TechnicalAIError:
         print("IA: Groq tuvo falla técnica. Intentando Gemini como respaldo.")
 
         try:

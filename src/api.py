@@ -2,16 +2,14 @@ from fastapi import FastAPI, Request
 from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
-from fastapi import HTTPException, Header, Depends, Query
+from fastapi import HTTPException, Header, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse
-import pandas as pd
 import os
-from datetime import datetime, timedelta
+from datetime import datetime
 from typing import Optional
-from src.poisson_model import calibrate_and_predict
 from src.routers.analizar_1x2 import router as analizar_router
-from src.database import init_db, save_pick, get_metrics, get_history, settle_pick
+from src.database import init_db, get_metrics, get_history, settle_pick
 
 API_KEY = os.getenv("API_KEY", "survivor-ligamx-premium-2026")
 
@@ -118,7 +116,7 @@ def settle_pick_endpoint(pick_id: int, result: float = 0.0, profit_loss: float =
 @app.get("/dashboard", response_class=HTMLResponse, summary="Dashboard visual", tags=["Dashboard"])
 def dashboard():
     stats = get_metrics()
-    
+
     html = """<!DOCTYPE html>
 <html>
 <head>
@@ -184,7 +182,7 @@ def dashboard():
     <p><a href="/docs">📚 Ver documentación API</a></p>
 </body>
 </html>"""
-    
+
     losses = stats['total_picks'] - stats['wins']
     html = html.format(
         total_picks=stats['total_picks'],
@@ -193,7 +191,7 @@ def dashboard():
         total_profit=f"{stats['total_profit']:.2f}",
         losses=losses
     )
-    
+
     return HTMLResponse(content=html)
 
 
@@ -238,20 +236,20 @@ def analyze_advanced(request: Request, api_key: str = Depends(verify_api_key)):
             timeout=60,
             cwd=os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
         )
-        
+
         # Capturar tanto stdout como stderr
         stdout = result.stdout.strip()
         stderr = result.stderr.strip()
-        
+
         if result.returncode != 0:
             return {
-                "status": "error", 
-                "message": "Error en análisis", 
+                "status": "error",
+                "message": "Error en análisis",
                 "returncode": result.returncode,
                 "stdout": stdout[:500] if stdout else "",
                 "stderr": stderr[:500] if stderr else ""
             }
-        
+
         # Buscar JSON en el output
         lines = stdout.split("\n")
         json_start = None
@@ -259,7 +257,7 @@ def analyze_advanced(request: Request, api_key: str = Depends(verify_api_key)):
             if line.strip().startswith("["):
                 json_start = i
                 break
-        
+
         if json_start is not None:
             json_output = "\n".join(lines[json_start:])
             data = json.loads(json_output)
@@ -288,7 +286,7 @@ def debug_jornadas(request: Request):
         jornadas_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data", "jornadas.json")
         with open(jornadas_path, 'r', encoding='utf-8') as f:
             data = json.load(f)
-        
+
         # Contar partidos
         if isinstance(data, list):
             count = len(data)
@@ -297,7 +295,7 @@ def debug_jornadas(request: Request):
             partidos = data.get('partidos', [])
             count = len(partidos)
             sample = partidos[:2] if partidos else []
-        
+
         return {
             "status": "success",
             "total_partidos": count,

@@ -18,7 +18,7 @@ Hechos (fuentes: Wikipedia "Liga MX" / squawka, junio 2026; reformulado):
 from __future__ import annotations
 
 import unicodedata
-from typing import Any, Dict, List
+from typing import Any, Dict
 
 EQUIPOS_LIGA_MX = 18
 TORNEOS = ("Apertura", "Clausura")
