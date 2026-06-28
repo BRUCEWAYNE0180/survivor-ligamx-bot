@@ -1,0 +1,14 @@
+name: Daily Backtest
+
+on:
+  schedule:
+    - cron: '0 2 * * *'  # Cada día a las 2 AM UTC
+  workflow_dispatch:  # Permitir ejecución manual
+
+jobs:
+  backtest:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger backtest
+        run: |
+          curl -X POST https://survivor-ligamx-bot.onrender.com/cron/backtest
