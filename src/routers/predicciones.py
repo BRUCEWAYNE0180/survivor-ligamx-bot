@@ -36,11 +36,18 @@ try:
 except ImportError:  # pragma: no cover
     from src import fuentes_datos as fuentes_mod  # type: ignore
 
+try:
+    import analisis_riesgo as riesgo_mod
+except ImportError:  # pragma: no cover
+    from src import analisis_riesgo as riesgo_mod  # type: ignore
+
 router = APIRouter(tags=["Predicciones"])
 
 _CACHE: Dict[str, Any] = {"data": None, "ts": None}
 _CACHE_TABLA: Dict[str, Any] = {"data": None, "ts": None}
+_CACHE_RIESGO: Dict[str, Any] = {"data": None, "ts": None}
 _TTL_MIN = 30
+_TTL_RIESGO_MIN = 360  # el histórico cambia lento; análisis pesado => caché larga
 
 
 def _fresco() -> bool:
@@ -157,3 +164,26 @@ def valor_diagnostico() -> Dict[str, Any]:
 def health_fuentes() -> Dict[str, Any]:
     """Ping a cada fuente para detectar caídas antes de la jornada."""
     return fuentes_mod.estado_fuentes()
+
+
+@router.get("/analisis/riesgo", summary="¿Cuándo falla el favorito? (análisis de upsets, datos reales)")
+def analisis_riesgo() -> Dict[str, Any]:
+    """
+    Mide, sobre el histórico real (walk-forward), cuándo y por qué falla el
+    favorito del modelo: por condición (local vs visitante), nivel de confianza
+    y partidos cerrados ('under'). Útil para no quemar el Survivor con un
+    favorito engañoso. Análisis pesado => caché de 6 horas.
+    """
+    fresco = bool(_CACHE_RIESGO["data"]) and bool(_CACHE_RIESGO["ts"]) and (
+        datetime.utcnow() - _CACHE_RIESGO["ts"] < timedelta(minutes=_TTL_RIESGO_MIN)
+    )
+    if not fresco:
+        try:
+            datos = fuentes_mod.obtener_resultados(meses=18)
+            _CACHE_RIESGO["data"] = riesgo_mod.analizar_riesgo_favoritos(datos["resultados"])
+            _CACHE_RIESGO["data"]["fuente_datos"] = datos.get("fuente")
+        except Exception as exc:  # pragma: no cover - fallback defensivo de red
+            return {"partidos_evaluados": 0, "error": str(exc),
+                    "decision": "INFORMATIVO / REVISIÓN HUMANA"}
+        _CACHE_RIESGO["ts"] = datetime.utcnow()
+    return _CACHE_RIESGO["data"]
