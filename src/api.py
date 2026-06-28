@@ -109,7 +109,7 @@ def settle_pick(pick_id: int, result: float = 0.0, profit_loss: float = 0.0, api
 def dashboard():
     from fastapi.responses import HTMLResponse
     stats = get_metrics()
-    html_content = """
+    html_content = f"""
     <!DOCTYPE html>
     <html>
     <head>
@@ -122,7 +122,8 @@ def dashboard():
             .metric h3 { margin: 0; color: #666; font-size: 14px; }
             .metric .value { font-size: 32px; font-weight: bold; color: #333; margin-top: 10px; }
         </style>
-    </head>
+        <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
     <body>
         <div class="header">
             <h1>📊 Survivor LigaMX Premium</h1>
@@ -146,9 +147,37 @@ def dashboard():
                 <div class="value">""" + f"{stats['total_profit']:.2f}" + """</div>
             </div>
         </div>
-    </body>
+    
+    <div style="background: white; padding: 20px; border-radius: 10px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); margin-bottom: 20px;">
+        <h3>📈 Rendimiento</h3>
+        <canvas id="performanceChart"></canvas>
+    </div>
+    <script>
+        const ctx = document.getElementById('performanceChart').getContext('2d');
+        new Chart(ctx, {
+            type: 'bar',
+            data: {
+                labels: ['Total Picks', 'Wins', 'Losses'],
+                datasets: [{
+                    label: 'Estadísticas',
+                    data: [STATS_TOTAL_PICKS, STATS_WINS, STATS_TOTAL_PICKS - STATS_WINS],
+                    backgroundColor: ['#667eea', '#10b981', '#ef4444']
+                }]
+            },
+            options: {
+                responsive: true,
+                plugins: {
+                    legend: { display: false }
+                }
+            }
+        });
+    </script>
+</body>
     </html>
     """
+    html_content = html_content.replace('STATS_TOTAL_PICKS', str(stats['total_picks']))
+    html_content = html_content.replace('STATS_WINS', str(stats['wins']))
+    html_content = html_content.replace('STATS_TOTAL_PICKS - STATS_WINS', str(stats['total_picks'] - stats['wins']))
     return HTMLResponse(content=html_content)
 
 if __name__ == "__main__":
