@@ -214,12 +214,14 @@ def update_data(request: Request, api_key: str = Depends(verify_api_key)):
         raise HTTPException(status_code=500, detail=str(e))
 
 
+
 @app.get("/analyze/advanced", summary="Análisis avanzado de mercados", tags=["Analysis"])
 @limiter.limit("10/minute")
 def analyze_advanced(request: Request, api_key: str = Depends(verify_api_key)):
     """Analiza Handicap Asiático, Goles por Equipo, Marcador Exacto"""
     import subprocess
     import sys
+    import json
     try:
         result = subprocess.run(
             [sys.executable, "src/advanced_markets.py"],
@@ -230,22 +232,19 @@ def analyze_advanced(request: Request, api_key: str = Depends(verify_api_key)):
         )
         
         if result.returncode == 0:
-            lines = result.stdout.strip().split('
-')
+            output_lines = result.stdout.strip().split("\n")
             json_start = None
-            for i, line in enumerate(lines):
-                if line.strip().startswith('['):
+            for i, line in enumerate(output_lines):
+                if line.strip().startswith("["):
                     json_start = i
                     break
             
             if json_start is not None:
-                json_output = '
-'.join(lines[json_start:])
-                import json
+                json_output = "\n".join(output_lines[json_start:])
                 data = json.loads(json_output)
                 return {"status": "success", "matches": data}
         
-        return {"status": "error", "message": "Error en análisis", "details": result.stderr}
+        return {"status": "error", "message": "Error en análisis", "details": result.stderr[:500]}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
