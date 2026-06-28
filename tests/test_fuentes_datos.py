@@ -45,7 +45,8 @@ class TestRedundancia(unittest.TestCase):
     def test_espn_primaria_si_suficiente(self):
         espn = [_r(f"H{i}", f"A{i}", 1, 0, f"2026-02-{i+1:02d}") for i in range(12)]
         with mock.patch.object(fd.espn_data, "obtener_resultados", return_value=espn):
-            res = fd.obtener_resultados(minimo=10)
+            with mock.patch.object(fd, "guardar_cache"):  # no tocar el cache real
+                res = fd.obtener_resultados(minimo=10)
         self.assertEqual(res["fuente"], "ESPN")
         self.assertEqual(res["total"], 12)
 
