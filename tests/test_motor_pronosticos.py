@@ -102,6 +102,19 @@ class TestSurvivor(unittest.TestCase):
         pick = mp.mejor_pick_survivor(pronos, motivacion=motivacion)
         self.assertEqual(pick["equipo"], "América")  # 85 > 60 pese a la motivación
 
+    def test_mejores_picks_top_n_ordenados(self):
+        pronos = [
+            {"local": "América", "visitante": "Toluca", "no_perder_local_pct": 80.0,
+             "no_perder_visitante_pct": 45.0},
+            {"local": "Pumas", "visitante": "Atlas", "no_perder_local_pct": 70.0,
+             "no_perder_visitante_pct": 35.0},
+        ]
+        top = mp.mejores_picks_survivor(pronos, n=3)
+        self.assertEqual([c["equipo"] for c in top], ["América", "Pumas", "Toluca"])
+        self.assertEqual(top[0]["no_perder_pct"], 80.0)
+        # mejor_pick_survivor es el #1 de la lista
+        self.assertEqual(mp.mejor_pick_survivor(pronos)["equipo"], top[0]["equipo"])
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)

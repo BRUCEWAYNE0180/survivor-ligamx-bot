@@ -65,15 +65,16 @@ def construir_mensaje(
         "",
     ]
 
-    pick = motor.mejor_pick_survivor(pronosticos, equipos_usados, motivacion)
-    if pick:
-        linea_pick = (
-            f"🎯 <b>SURVIVOR sugerido:</b> {pick['equipo']} "
-            f"({pick['condicion']} vs {pick['rival']}) — no perder {pick['no_perder_pct']}%"
-        )
-        if pick.get("rival_motivacion"):
-            linea_pick += f" · rival motivación: {pick['rival_motivacion']}"
-        lineas.append(linea_pick)
+    tops = motor.mejores_picks_survivor(pronosticos, equipos_usados, motivacion, n=3)
+    if tops:
+        lineas.append("🎯 <b>SURVIVOR — top 3 (no perder):</b>")
+        medallas = ["🥇", "🥈", "🥉"]
+        for i, pk in enumerate(tops):
+            extra = f" · rival mot.: {pk['rival_motivacion']}" if pk.get("rival_motivacion") else ""
+            lineas.append(
+                f"{medallas[i] if i < 3 else '•'} {pk['equipo']} "
+                f"({pk['condicion']} vs {pk['rival']}) — {pk['no_perder_pct']}%{extra}"
+            )
         lineas.append("")
 
     if pronosticos:
