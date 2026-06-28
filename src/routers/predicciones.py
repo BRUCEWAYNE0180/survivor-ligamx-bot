@@ -41,11 +41,22 @@ try:
 except ImportError:  # pragma: no cover
     from src import analisis_riesgo as riesgo_mod  # type: ignore
 
+try:
+    import planificador_survivor as plan_mod
+except ImportError:  # pragma: no cover
+    from src import planificador_survivor as plan_mod  # type: ignore
+
+try:
+    import poisson_model as pm
+except ImportError:  # pragma: no cover
+    from src import poisson_model as pm  # type: ignore
+
 router = APIRouter(tags=["Predicciones"])
 
 _CACHE: Dict[str, Any] = {"data": None, "ts": None}
 _CACHE_TABLA: Dict[str, Any] = {"data": None, "ts": None}
 _CACHE_RIESGO: Dict[str, Any] = {"data": None, "ts": None}
+_CACHE_PLAN: Dict[str, Any] = {"data": None, "ts": None}
 _TTL_MIN = 30
 _TTL_RIESGO_MIN = 360  # el histórico cambia lento; análisis pesado => caché larga
 
@@ -187,3 +198,46 @@ def analisis_riesgo() -> Dict[str, Any]:
                     "decision": "INFORMATIVO / REVISIÓN HUMANA"}
         _CACHE_RIESGO["ts"] = datetime.utcnow()
     return _CACHE_RIESGO["data"]
+
+
+@router.get("/plan-survivor", summary="Estrategia de temporada: qué equipo usar en cada jornada")
+def plan_survivor(excluir: str = "", peso_victoria: float = 0.5) -> Dict[str, Any]:
+    """
+    Plan ÓPTIMO de Survivor para toda la temporada (PlayDoit): asigna 1 equipo por
+    jornada, sin repetir, maximizando supervivencia (no perder) y victorias.
+
+    Requiere `data/calendario.json` con el calendario completo de las 17 jornadas
+    (se publica cerca del arranque). Sin él, responde `calendario_incompleto`.
+    `excluir`: equipos ya gastados (coma). `peso_victoria`: 0 = solo sobrevivir.
+    Análisis pesado => caché de 6 horas (sin filtros).
+    """
+    usados = [e.strip() for e in excluir.split(",") if e.strip()]
+    usar_cache = not usados and abs(peso_victoria - 0.5) < 1e-9
+    if usar_cache:
+        fresco = bool(_CACHE_PLAN["data"]) and bool(_CACHE_PLAN["ts"]) and (
+            datetime.utcnow() - _CACHE_PLAN["ts"] < timedelta(minutes=_TTL_RIESGO_MIN)
+        )
+        if fresco:
+            return _CACHE_PLAN["data"]
+
+    calendario = plan_mod.cargar_calendario()
+    if not calendario:
+        return {
+            "plan": [], "calendario_incompleto": True,
+            "mensaje": "Falta data/calendario.json con las 17 jornadas. El calendario "
+                       "del Apertura 2026 se publica cerca del 17-jul; guárdalo y reintenta.",
+            "decision": "INFORMATIVO / REVISIÓN HUMANA",
+        }
+    try:
+        datos = fuentes_mod.obtener_resultados(meses=18)
+        fuerzas = pm.calcular_fuerzas(datos["resultados"])
+        resultado = plan_mod.planificar(calendario, fuerzas, equipos_usados=usados,
+                                        peso_victoria=peso_victoria)
+        resultado["fuente_datos"] = datos.get("fuente")
+    except Exception as exc:  # pragma: no cover - fallback defensivo
+        return {"plan": [], "error": str(exc),
+                "decision": "INFORMATIVO / REVISIÓN HUMANA"}
+    if usar_cache:
+        _CACHE_PLAN["data"] = resultado
+        _CACHE_PLAN["ts"] = datetime.utcnow()
+    return resultado
