@@ -215,6 +215,7 @@ def update_data(request: Request, api_key: str = Depends(verify_api_key)):
 
 
 
+
 @app.get("/analyze/advanced", summary="Análisis avanzado de mercados", tags=["Analysis"])
 @limiter.limit("10/minute")
 def analyze_advanced(request: Request, api_key: str = Depends(verify_api_key)):
@@ -231,22 +232,44 @@ def analyze_advanced(request: Request, api_key: str = Depends(verify_api_key)):
             cwd=os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
         )
         
-        if result.returncode == 0:
-            output_lines = result.stdout.strip().split("\n")
-            json_start = None
-            for i, line in enumerate(output_lines):
-                if line.strip().startswith("["):
-                    json_start = i
-                    break
-            
-            if json_start is not None:
-                json_output = "\n".join(output_lines[json_start:])
-                data = json.loads(json_output)
-                return {"status": "success", "matches": data}
+        # Capturar tanto stdout como stderr
+        stdout = result.stdout.strip()
+        stderr = result.stderr.strip()
         
-        return {"status": "error", "message": "Error en análisis", "details": result.stderr[:500]}
+        if result.returncode != 0:
+            return {
+                "status": "error", 
+                "message": "Error en análisis", 
+                "returncode": result.returncode,
+                "stdout": stdout[:500] if stdout else "",
+                "stderr": stderr[:500] if stderr else ""
+            }
+        
+        # Buscar JSON en el output
+        lines = stdout.split("\n")
+        json_start = None
+        for i, line in enumerate(lines):
+            if line.strip().startswith("["):
+                json_start = i
+                break
+        
+        if json_start is not None:
+            json_output = "\n".join(lines[json_start:])
+            data = json.loads(json_output)
+            return {"status": "success", "matches": data}
+        else:
+            return {
+                "status": "warning",
+                "message": "No se encontró JSON en el output",
+                "stdout": stdout[:500] if stdout else "",
+                "stderr": stderr[:500] if stderr else ""
+            }
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        return {
+            "status": "error",
+            "message": "Excepción en el endpoint",
+            "error": str(e)
+        }
 
 if __name__ == "__main__":
     import uvicorn
