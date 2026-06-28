@@ -42,11 +42,11 @@ def _fake_resultados():
 
 def _fake_calendario():
     return [
-        {"jornada": 1, "partidos": [
+        {"jornada": 1, "fecha_inicio": "2026-07-16", "fecha_fin": "2026-07-18", "partidos": [
             {"home_team": "América", "away_team": "Guadalajara"},
             {"home_team": "Toluca", "away_team": "Atlante"},
         ]},
-        {"jornada": 2, "partidos": [
+        {"jornada": 2, "fecha_inicio": "2026-07-21", "fecha_fin": "2026-07-26", "partidos": [
             {"home_team": "Guadalajara", "away_team": "Toluca"},
             {"home_team": "Atlante", "away_team": "América"},
         ]},
@@ -145,6 +145,45 @@ class TestApiLigaMX(unittest.TestCase):
         r = api.resultados(meses=2)
         self.assertEqual(r["total"], 5)
         self.assertEqual(r["fuente"], "ESPN (test)")
+
+    def test_jornada_actual_pretemporada(self):
+        r = api.jornada_actual(fecha="2026-07-01")
+        self.assertEqual(r["estado"], "pretemporada")
+        self.assertIsNone(r["jornada_actual"])
+        self.assertEqual(r["jornada_proxima"], 1)
+        self.assertEqual(r["jornada_objetivo"]["jornada"], 1)
+        self.assertEqual(r["dias_para_proxima"], 15)
+
+    def test_jornada_actual_en_curso(self):
+        r = api.jornada_actual(fecha="2026-07-17")
+        self.assertEqual(r["estado"], "en_curso")
+        self.assertEqual(r["jornada_actual"], 1)
+        self.assertEqual(r["jornada_objetivo"]["jornada"], 1)
+
+    def test_jornada_actual_entre_jornadas(self):
+        r = api.jornada_actual(fecha="2026-07-20")
+        self.assertEqual(r["estado"], "entre_jornadas")
+        self.assertIsNone(r["jornada_actual"])
+        self.assertEqual(r["ultima_jugada"], 1)
+        self.assertEqual(r["jornada_objetivo"]["jornada"], 2)
+
+    def test_jornada_actual_terminada(self):
+        r = api.jornada_actual(fecha="2026-12-01")
+        self.assertEqual(r["estado"], "temporada_terminada")
+        self.assertEqual(r["ultima_jugada"], 2)
+        self.assertIsNone(r["jornada_objetivo"])
+
+    def test_jornada_actual_con_predicciones(self):
+        r = api.jornada_actual(fecha="2026-07-17", predicciones=True)
+        partidos = r["jornada_objetivo"]["partidos"]
+        ag = next(p for p in partidos if p["home_team"] == "América")
+        self.assertIn("prediccion", ag)
+        self.assertIsNotNone(ag["prediccion"])
+
+    def test_jornada_actual_fecha_invalida(self):
+        with self.assertRaises(fastapi.HTTPException) as ctx:
+            api.jornada_actual(fecha="no-es-fecha")
+        self.assertEqual(ctx.exception.status_code, 400)
 
     def test_cache_evita_recalcular(self):
         with mock.patch.object(api.fuentes_mod, "obtener_resultados",

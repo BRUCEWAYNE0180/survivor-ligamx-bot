@@ -155,6 +155,7 @@ modelo Poisson). Cacheada. Cada respuesta lleva `INFORMATIVO / REVISIÓN HUMANA`
 | `GET /api/v1/equipos/{equipo}/calendario` | Todos los partidos del equipo en la temporada |
 | `GET /api/v1/calendario` | Calendario completo (17 jornadas) |
 | `GET /api/v1/calendario/{jornada}?predicciones=true` | Una jornada (con predicción opcional) |
+| `GET /api/v1/jornada-actual?fecha=&predicciones=` | Jornada en curso/próxima según la fecha (auto) |
 | `GET /api/v1/resultados?meses=2` | Resultados reales recientes (ESPN) |
 | `GET /api/v1/tabla` | Tabla general + motivación |
 | `GET /api/v1/predicciones` | Predicciones de la jornada próxima |

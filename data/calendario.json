@@ -1,6 +1,8 @@
 [
   {
     "jornada": 1,
+    "fecha_inicio": "2026-07-16",
+    "fecha_fin": "2026-07-18",
     "partidos": [
       {
         "home_team": "Necaxa",
@@ -42,6 +44,8 @@
   },
   {
     "jornada": 2,
+    "fecha_inicio": "2026-07-21",
+    "fecha_fin": "2026-07-26",
     "partidos": [
       {
         "home_team": "Cruz Azul",
@@ -83,6 +87,8 @@
   },
   {
     "jornada": 3,
+    "fecha_inicio": "2026-07-31",
+    "fecha_fin": "2026-08-02",
     "partidos": [
       {
         "home_team": "Puebla",
@@ -124,6 +130,8 @@
   },
   {
     "jornada": 4,
+    "fecha_inicio": "2026-08-15",
+    "fecha_fin": "2026-08-17",
     "partidos": [
       {
         "home_team": "Atlante",
@@ -165,6 +173,8 @@
   },
   {
     "jornada": 5,
+    "fecha_inicio": "2026-08-21",
+    "fecha_fin": "2026-08-23",
     "partidos": [
       {
         "home_team": "Puebla",
@@ -206,6 +216,8 @@
   },
   {
     "jornada": 6,
+    "fecha_inicio": "2026-08-28",
+    "fecha_fin": "2026-08-30",
     "partidos": [
       {
         "home_team": "Necaxa",
@@ -247,6 +259,8 @@
   },
   {
     "jornada": 7,
+    "fecha_inicio": "2026-09-04",
+    "fecha_fin": "2026-09-06",
     "partidos": [
       {
         "home_team": "Puebla",
@@ -288,6 +302,8 @@
   },
   {
     "jornada": 8,
+    "fecha_inicio": "2026-09-11",
+    "fecha_fin": "2026-09-13",
     "partidos": [
       {
         "home_team": "Necaxa",
@@ -329,6 +345,8 @@
   },
   {
     "jornada": 9,
+    "fecha_inicio": "2026-09-18",
+    "fecha_fin": "2026-09-20",
     "partidos": [
       {
         "home_team": "Puebla",
@@ -370,6 +388,8 @@
   },
   {
     "jornada": 10,
+    "fecha_inicio": "2026-09-25",
+    "fecha_fin": "2026-09-27",
     "partidos": [
       {
         "home_team": "Atlante",
@@ -411,6 +431,8 @@
   },
   {
     "jornada": 11,
+    "fecha_inicio": "2026-10-09",
+    "fecha_fin": "2026-10-11",
     "partidos": [
       {
         "home_team": "Querétaro",
@@ -452,6 +474,8 @@
   },
   {
     "jornada": 12,
+    "fecha_inicio": "2026-10-16",
+    "fecha_fin": "2026-10-18",
     "partidos": [
       {
         "home_team": "Necaxa",
@@ -493,6 +517,8 @@
   },
   {
     "jornada": 13,
+    "fecha_inicio": "2026-10-20",
+    "fecha_fin": "2026-10-21",
     "partidos": [
       {
         "home_team": "Atlético de San Luis",
@@ -534,6 +560,8 @@
   },
   {
     "jornada": 14,
+    "fecha_inicio": "2026-10-23",
+    "fecha_fin": "2026-10-25",
     "partidos": [
       {
         "home_team": "Necaxa",
@@ -575,6 +603,8 @@
   },
   {
     "jornada": 15,
+    "fecha_inicio": "2026-10-30",
+    "fecha_fin": "2026-11-01",
     "partidos": [
       {
         "home_team": "Atlético de San Luis",
@@ -616,6 +646,8 @@
   },
   {
     "jornada": 16,
+    "fecha_inicio": "2026-11-06",
+    "fecha_fin": "2026-11-08",
     "partidos": [
       {
         "home_team": "Atlético de San Luis",
@@ -657,6 +689,8 @@
   },
   {
     "jornada": 17,
+    "fecha_inicio": "2026-11-20",
+    "fecha_fin": "2026-11-22",
     "partidos": [
       {
         "home_team": "Puebla",

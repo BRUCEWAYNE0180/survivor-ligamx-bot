@@ -112,6 +112,28 @@ JORNADAS: List[List[Tuple[str, str]]] = [
      ("Tigres UANL", "América"), ("Guadalajara", "Cruz Azul"), ("Querétaro", "Necaxa")],
 ]
 
+# Rango de fechas (inicio, fin) por jornada, transcrito del PDF oficial.
+# Todas en 2026. Formato ISO (YYYY-MM-DD).
+FECHAS: List[Tuple[str, str]] = [
+    ("2026-07-16", "2026-07-18"),  # J1  16,17,18 jul
+    ("2026-07-21", "2026-07-26"),  # J2  21,24,25,26 jul
+    ("2026-07-31", "2026-08-02"),  # J3  31 jul, 1, 2 ago
+    ("2026-08-15", "2026-08-17"),  # J4  15,16,17 ago
+    ("2026-08-21", "2026-08-23"),  # J5  21,22,23 ago
+    ("2026-08-28", "2026-08-30"),  # J6  28,29,30 ago
+    ("2026-09-04", "2026-09-06"),  # J7  4,5,6 sep
+    ("2026-09-11", "2026-09-13"),  # J8  11,12,13 sep
+    ("2026-09-18", "2026-09-20"),  # J9  18,19,20 sep
+    ("2026-09-25", "2026-09-27"),  # J10 25,26,27 sep
+    ("2026-10-09", "2026-10-11"),  # J11 9,10,11 oct
+    ("2026-10-16", "2026-10-18"),  # J12 16,17,18 oct
+    ("2026-10-20", "2026-10-21"),  # J13 doble: 20,21 oct (mar/mié)
+    ("2026-10-23", "2026-10-25"),  # J14 23,24,25 oct
+    ("2026-10-30", "2026-11-01"),  # J15 30,31 oct, 1 nov
+    ("2026-11-06", "2026-11-08"),  # J16 6,7,8 nov
+    ("2026-11-20", "2026-11-22"),  # J17 20,21,22 nov
+]
+
 
 def validar(jornadas: List[List[Tuple[str, str]]]) -> List[str]:
     """Devuelve lista de errores de integridad (vacía si todo OK)."""
@@ -160,12 +182,36 @@ def validar(jornadas: List[List[Tuple[str, str]]]) -> List[str]:
         if n != 17:
             errores.append(f"{e}: juega {n} partidos (deberían ser 17).")
 
+    # Validación de fechas: 17 rangos, inicio<=fin, y jornadas en orden temporal.
+    if len(FECHAS) != 17:
+        errores.append(f"Se esperaban 17 rangos de fechas, hay {len(FECHAS)}.")
+    else:
+        from datetime import date
+        prev_fin = None
+        for i, (ini, fin) in enumerate(FECHAS, start=1):
+            try:
+                d_ini = date.fromisoformat(ini)
+                d_fin = date.fromisoformat(fin)
+            except ValueError:
+                errores.append(f"J{i}: fecha inválida ({ini}/{fin}).")
+                continue
+            if d_ini > d_fin:
+                errores.append(f"J{i}: fecha_inicio ({ini}) posterior a fecha_fin ({fin}).")
+            if prev_fin and d_ini <= prev_fin:
+                errores.append(f"J{i}: empieza ({ini}) antes de que termine la jornada previa ({prev_fin}).")
+            prev_fin = d_fin
+
     return errores
 
 
 def construir() -> List[dict]:
     return [
-        {"jornada": i, "partidos": [{"home_team": h, "away_team": a} for h, a in jornada]}
+        {
+            "jornada": i,
+            "fecha_inicio": FECHAS[i - 1][0],
+            "fecha_fin": FECHAS[i - 1][1],
+            "partidos": [{"home_team": h, "away_team": a} for h, a in jornada],
+        }
         for i, jornada in enumerate(JORNADAS, start=1)
     ]
 

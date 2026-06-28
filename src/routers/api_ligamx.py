@@ -28,7 +28,7 @@ Endpoints:
 from __future__ import annotations
 
 import unicodedata
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 from typing import Any, Dict, List, Optional, Tuple
 
 from fastapi import APIRouter, HTTPException, Query
@@ -188,6 +188,7 @@ def indice() -> Dict[str, Any]:
             "/api/v1/equipos/{equipo}/calendario": "Todos los partidos del equipo",
             "/api/v1/calendario": "Calendario completo (17 jornadas)",
             "/api/v1/calendario/{jornada}": "Una jornada (?predicciones=true)",
+            "/api/v1/jornada-actual": "Jornada actual/próxima según la fecha (?fecha=&predicciones=)",
             "/api/v1/resultados?meses=2": "Resultados reales recientes (ESPN)",
             "/api/v1/tabla": "Tabla general + motivación por equipo",
             "/api/v1/predicciones": "Predicciones de la jornada próxima",
@@ -251,6 +252,8 @@ def _partidos_de_equipo(nombre: str, calendario: List[Dict[str, Any]], fuerzas: 
                 pred = _prediccion_partido(home, away, fuerzas)
                 item = {
                     "jornada": jnum,
+                    "fecha_inicio": j.get("fecha_inicio"),
+                    "fecha_fin": j.get("fecha_fin"),
                     "condicion": "Local" if es_local else "Visitante",
                     "rival": rival,
                 }
@@ -260,6 +263,58 @@ def _partidos_de_equipo(nombre: str, calendario: List[Dict[str, Any]], fuerzas: 
                 salida.append(item)
                 break
     return salida
+
+
+def _calcular_jornada_actual(calendario: List[Dict[str, Any]], hoy: date) -> Dict[str, Any]:
+    """Determina, para una fecha dada, el estado del torneo y la jornada objetivo.
+
+    estado: pretemporada | en_curso | entre_jornadas | temporada_terminada | sin_fechas
+    jornada_objetivo = la jornada para la que conviene hacer el pick (la que está
+    en curso, o si no, la próxima).
+    """
+    js: List[Dict[str, Any]] = []
+    for j in sorted(calendario, key=lambda x: int(x.get("jornada", 0))):
+        ini, fin = j.get("fecha_inicio"), j.get("fecha_fin")
+        if not ini or not fin:
+            continue
+        try:
+            js.append({"jornada": int(j.get("jornada", 0)),
+                       "ini": date.fromisoformat(ini), "fin": date.fromisoformat(fin), "raw": j})
+        except ValueError:
+            continue
+    if not js:
+        return {"estado": "sin_fechas", "jornada_actual": None, "jornada_proxima": None,
+                "jornada_objetivo": None, "ultima_jugada": None, "dias_para_proxima": None}
+
+    actual = next((x for x in js if x["ini"] <= hoy <= x["fin"]), None)
+    proxima = next((x for x in js if x["ini"] > hoy), None)
+    ultima = None
+    for x in js:
+        if x["fin"] < hoy:
+            ultima = x
+
+    if actual:
+        estado = "en_curso"
+        objetivo = actual
+    elif hoy < js[0]["ini"]:
+        estado = "pretemporada"
+        objetivo = js[0]
+    elif proxima is None:
+        estado = "temporada_terminada"
+        objetivo = None
+    else:
+        estado = "entre_jornadas"
+        objetivo = proxima
+
+    dias = (proxima["ini"] - hoy).days if proxima else None
+    return {
+        "estado": estado,
+        "jornada_actual": actual["jornada"] if actual else None,
+        "jornada_proxima": proxima["jornada"] if proxima else None,
+        "ultima_jugada": ultima["jornada"] if ultima else None,
+        "jornada_objetivo": objetivo,  # dict con 'raw' o None
+        "dias_para_proxima": dias,
+    }
 
 
 @router.get("/equipos/{equipo}/calendario", summary="Calendario de un equipo")
@@ -394,3 +449,50 @@ def head_to_head(
         "fuente_datos": datos.get("fuente"),
         "decision": DEC,
     }
+
+
+
+@router.get("/jornada-actual", summary="Jornada actual/próxima según la fecha")
+def jornada_actual(
+    fecha: Optional[str] = Query(None, description="Fecha hipotética YYYY-MM-DD (default: hoy)"),
+    predicciones: bool = Query(False),
+) -> Dict[str, Any]:
+    calendario = _calendario()
+    if fecha:
+        try:
+            hoy = date.fromisoformat(fecha)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=f"Fecha inválida: {fecha}") from exc
+    else:
+        hoy = datetime.utcnow().date()
+
+    info = _calcular_jornada_actual(calendario, hoy)
+    objetivo = info.pop("jornada_objetivo", None)
+
+    salida: Dict[str, Any] = {
+        "fecha_consulta": hoy.isoformat(),
+        "torneo": "Apertura 2026",
+        **info,
+        "decision": DEC,
+    }
+
+    if objetivo is not None:
+        raw = objetivo["raw"]
+        _, fuerzas = _datos_y_fuerzas()
+        partidos: List[Dict[str, Any]] = []
+        for p in raw.get("partidos", []):
+            home, away = p.get("home_team", ""), p.get("away_team", "")
+            item: Dict[str, Any] = {"home_team": home, "away_team": away}
+            if predicciones:
+                item["prediccion"] = _prediccion_partido(home, away, fuerzas)
+            partidos.append(item)
+        salida["jornada_objetivo"] = {
+            "jornada": objetivo["jornada"],
+            "fecha_inicio": objetivo["ini"].isoformat(),
+            "fecha_fin": objetivo["fin"].isoformat(),
+            "partidos": partidos,
+        }
+    else:
+        salida["jornada_objetivo"] = None
+
+    return salida
