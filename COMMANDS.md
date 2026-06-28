@@ -141,6 +141,28 @@ python3 scripts/rss_lesiones_ligamx.py --help
 python3 scripts/final_security_gate.py
 ```
 
+## API pública unificada de Liga MX (`/api/v1`)
+
+API REST gratis, sin key, read-only, que consolida en un solo lugar todo lo que
+el bot recolecta de fuentes públicas (ESPN + TheSportsDB + calendario oficial +
+modelo Poisson). Cacheada. Cada respuesta lleva `INFORMATIVO / REVISIÓN HUMANA`.
+
+| Endpoint | Qué devuelve |
+|---|---|
+| `GET /api/v1` | Índice/catálogo de la API |
+| `GET /api/v1/equipos` | Equipos del torneo (+ `tiene_modelo`) |
+| `GET /api/v1/equipos/{equipo}` | Ficha: fuerzas del modelo + calendario del equipo |
+| `GET /api/v1/equipos/{equipo}/calendario` | Todos los partidos del equipo en la temporada |
+| `GET /api/v1/calendario` | Calendario completo (17 jornadas) |
+| `GET /api/v1/calendario/{jornada}?predicciones=true` | Una jornada (con predicción opcional) |
+| `GET /api/v1/resultados?meses=2` | Resultados reales recientes (ESPN) |
+| `GET /api/v1/tabla` | Tabla general + motivación |
+| `GET /api/v1/predicciones` | Predicciones de la jornada próxima |
+| `GET /api/v1/h2h?local=&visitante=` | Head-to-head histórico real + predicción del modelo |
+
+La búsqueda de equipos **ignora acentos** y entiende alias comunes
+(`chivas`, `pumas`, `tigres`, `xolos`, `rayados`, `san luis`, etc.).
+
 ## Endpoints web (FastAPI en Render)
 
 `/predicciones` · `/survivor?excluir=` · `/jornada` (todo-en-uno) · `/tabla` ·

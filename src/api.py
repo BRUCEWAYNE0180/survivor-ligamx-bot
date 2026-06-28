@@ -35,6 +35,8 @@ from src.routers.cron_router import router as cron_router
 app.include_router(cron_router)
 from src.routers.predicciones import router as predicciones_router
 app.include_router(predicciones_router)
+from src.routers.api_ligamx import router as api_ligamx_router
+app.include_router(api_ligamx_router)
 init_db()
 
 # NOTA: el viejo path de "picks de alto EV" leia un parquet de momios scrapeados
