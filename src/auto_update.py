@@ -1,39 +1,19 @@
 #!/usr/bin/env python3
-"""
-Auto-Update System - Mantener datos frescos automáticamente
-"""
 import subprocess
 import sys
 import os
-import json
 from datetime import datetime
-from pathlib import Path
-
-BASE_DIR = Path(__file__).resolve().parent.parent
 
 def log(message):
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     print(f"[{timestamp}] {message}")
-
-def ensure_jornadas_file():
-    """Asegura que exista jornadas.json con estructura válida"""
-    jornadas_path = BASE_DIR / "data" / "jornadas.json"
-    if not jornadas_path.exists():
-        jornadas_path.parent.mkdir(parents=True, exist_ok=True)
-        with open(jornadas_path, 'w') as f:
-            json.dump({
-                "jornadas": [],
-                "partidos": [],
-                "ultima_actualizacion": None
-            }, f, indent=2)
-        log("📝 Archivo jornadas.json creado")
 
 def run_script(script_name, description):
     log(f"🔄 {description}")
     try:
         result = subprocess.run(
             [sys.executable, f"src/{script_name}"],
-            cwd=BASE_DIR,
+            cwd=os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
             capture_output=True,
             text=True,
             timeout=300
@@ -41,50 +21,33 @@ def run_script(script_name, description):
         
         if result.returncode == 0:
             log(f"✅ {description} - OK")
-            return True, result.stdout
+            return True
         else:
             log(f"❌ {description} - Error: {result.stderr[:200]}")
-            return False, result.stderr
-    except subprocess.TimeoutExpired:
-        log(f"⏱️ {description} - Timeout")
-        return False, "Timeout"
+            return False
     except Exception as e:
         log(f"❌ {description} - Exception: {e}")
-        return False, str(e)
+        return False
 
 def main():
-    log("=" * 60)
-    log("INICIANDO ACTUALIZACIÓN AUTOMÁTICA DE DATOS")
-    log("=" * 60)
+    log("=" * 70)
+    log("INICIANDO ACTUALIZACIÓN AUTOMÁTICA (ESPN)")
+    log("=" * 70)
     
-    # Asegurar que existe el archivo
-    ensure_jornadas_file()
+    # Scraper principal: ESPN (gratis y funciona)
+    success1 = run_script("scraper.py", "Scraper ESPN Liga MX")
     
-    results = {}
+    # Análisis de confianza
+    success2 = run_script("data_confidence.py", "Análisis de confianza")
     
-    # 1. Scraper principal - actualiza jornadas.json con datos de The Odds API
-    results['scraper'] = run_script(
-        "scraper.py",
-        "Ejecutando scraper principal (The Odds API)"
-    )
-    
-    # 2. Procesar datos de confianza
-    results['confidence'] = run_script(
-        "data_confidence.py",
-        "Procesando análisis de confianza"
-    )
-    
-    log("=" * 60)
-    success_count = sum(1 for r in results.values() if r[0])
-    total_count = len(results)
-    
-    if success_count == total_count:
-        log(f"✅ ACTUALIZACIÓN COMPLETA ({success_count}/{total_count})")
+    log("=" * 70)
+    if success1 and success2:
+        log("✅ ACTUALIZACIÓN COMPLETA")
     else:
-        log(f"⚠️ ACTUALIZACIÓN PARCIAL ({success_count}/{total_count})")
+        log("⚠️ ACTUALIZACIÓN PARCIAL")
+    log("=" * 70)
     
-    log("=" * 60)
-    return success_count == total_count
+    return success1 and success2
 
 if __name__ == "__main__":
     success = main()
