@@ -4,8 +4,9 @@
 !.env.example
 
 # Datos locales
-data/
+data/*
 !data/jornadas.json
+!data/calendario.json
 
 # Python
 __pycache__/
