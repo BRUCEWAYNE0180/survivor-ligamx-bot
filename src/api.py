@@ -107,97 +107,86 @@ def settle_pick(pick_id: int, result: float = 0.0, profit_loss: float = 0.0, api
 
 
 
-@app.get("/dashboard", summary="Dashboard visual", tags=["Dashboard"])
+@app.get("/dashboard", response_class=HTMLResponse, summary="Dashboard visual", tags=["Dashboard"])
 def dashboard():
-    from fastapi.responses import HTMLResponse
     stats = get_metrics()
-    html_content = f"""
-    <!DOCTYPE html>
-    <html>
-    <head>
-        <title>Survivor LigaMX Dashboard</title>
-        <style>
-            body { font-family: Arial, sans-serif; max-width: 1200px; margin: 0 auto; padding: 20px; background: #f5f5f5; }
-            .header { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 30px; border-radius: 10px; margin-bottom: 30px; }
-            .metrics { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 20px; margin-bottom: 30px; }
-            .metric { background: white; padding: 20px; border-radius: 10px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
-            .metric h3 { margin: 0; color: #666; font-size: 14px; }
-            .metric .value { font-size: 32px; font-weight: bold; color: #333; margin-top: 10px; }
-        </style>
-        <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-</head>
-    <body>
-        <div class="header">
-            <h1>📊 Survivor LigaMX Premium</h1>
-            <p>Dashboard de Rendimiento en Vivo</p>
-        </div>
-        <div class="metrics">
-            <div class="metric">
-                <h3>Total Picks</h3>
-                <div class="value">""" + str(stats['total_picks']) + """</div>
-            </div>
-            <div class="metric">
-                <h3>Wins</h3>
-                <div class="value">""" + str(stats['wins']) + """</div>
-            </div>
-            <div class="metric">
-                <h3>Win Rate</h3>
-                <div class="value">""" + f"{stats['win_rate']:.1f}%" + """</div>
-            </div>
-            <div class="metric">
-                <h3>Total Profit</h3>
-                <div class="value">""" + f"{stats['total_profit']:.2f}" + """</div>
-            </div>
-        </div>
     
-    <div style="background: white; padding: 20px; border-radius: 10px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); margin-bottom: 20px;">
+    html = """<!DOCTYPE html>
+<html>
+<head>
+    <title>Survivor LigaMX Dashboard</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        body {{ font-family: Arial, sans-serif; max-width: 1200px; margin: 0 auto; padding: 20px; background: #f5f5f5; }}
+        .header {{ background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 30px; border-radius: 10px; margin-bottom: 30px; }}
+        .metrics {{ display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 20px; margin-bottom: 30px; }}
+        .metric {{ background: white; padding: 20px; border-radius: 10px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }}
+        .metric h3 {{ margin: 0; color: #666; font-size: 14px; }}
+        .metric .value {{ font-size: 32px; font-weight: bold; color: #333; margin-top: 10px; }}
+        .chart-container {{ background: white; padding: 20px; border-radius: 10px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); margin-bottom: 20px; }}
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>📊 Survivor LigaMX Premium</h1>
+        <p>Dashboard de Rendimiento en Vivo</p>
+    </div>
+    <div class="metrics">
+        <div class="metric">
+            <h3>Total Picks</h3>
+            <div class="value">{total_picks}</div>
+        </div>
+        <div class="metric">
+            <h3>Wins</h3>
+            <div class="value">{wins}</div>
+        </div>
+        <div class="metric">
+            <h3>Win Rate</h3>
+            <div class="value">{win_rate}%</div>
+        </div>
+        <div class="metric">
+            <h3>Total Profit</h3>
+            <div class="value">{total_profit}</div>
+        </div>
+    </div>
+    <div class="chart-container">
         <h3>📈 Rendimiento</h3>
         <canvas id="performanceChart"></canvas>
     </div>
     <script>
         const ctx = document.getElementById('performanceChart').getContext('2d');
-        new Chart(ctx, {
+        new Chart(ctx, {{
             type: 'bar',
-            data: {
+            data: {{
                 labels: ['Total Picks', 'Wins', 'Losses'],
-                datasets: [{
+                datasets: [{{
                     label: 'Estadísticas',
-                    data: [STATS_TOTAL_PICKS, STATS_WINS, STATS_TOTAL_PICKS - STATS_WINS],
+                    data: [{total_picks}, {wins}, {losses}],
                     backgroundColor: ['#667eea', '#10b981', '#ef4444']
-                }]
-            },
-            options: {
+                }}]
+            }},
+            options: {{
                 responsive: true,
-                plugins: {
-                    legend: { display: false }
-                }
-            }
-        });
+                plugins: {{
+                    legend: {{ display: false }}
+                }}
+            }}
+        }});
     </script>
+    <p><a href="/docs">📚 Ver documentación API</a></p>
 </body>
-    </html>
-    """
-    html_content = html_content.replace('STATS_TOTAL_PICKS', str(stats['total_picks']))
-    html_content = html_content.replace('STATS_WINS', str(stats['wins']))
-    html_content = html_content.replace('STATS_TOTAL_PICKS - STATS_WINS', str(stats['total_picks'] - stats['wins']))
-    return HTMLResponse(content=html_content)
-
-
-@app.post("/alerts/high-ev", summary="Enviar alertas de picks con EV > 5%", tags=["Alerts"])
-@limiter.limit("5/minute")
-def alerts_high_ev(request: Request):
-    return send_high_ev_alerts()
-
-
-@app.get("/analyze/markets", summary="Analizar mercados adicionales", tags=["Analysis"])
-@limiter.limit("10/minute")
-def analyze_markets(request: Request, home: float, draw: float, away: float):
-    """Analiza Over/Under, BTTS y Doble Oportunidad"""
-    try:
-        result = analyze_additional_markets(home, draw, away)
-        return {"status": "success", "markets": result}
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e))
+</html>"""
+    
+    losses = stats['total_picks'] - stats['wins']
+    html = html.format(
+        total_picks=stats['total_picks'],
+        wins=stats['wins'],
+        win_rate=f"{stats['win_rate']:.1f}",
+        total_profit=f"{stats['total_profit']:.2f}",
+        losses=losses
+    )
+    
+    return HTMLResponse(content=html)
 
 if __name__ == "__main__":
     import uvicorn
