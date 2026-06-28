@@ -30,6 +30,8 @@ app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 app.include_router(analizar_router)
 from src.routers.cron_router import router as cron_router
 app.include_router(cron_router)
+from src.routers.predicciones import router as predicciones_router
+app.include_router(predicciones_router)
 init_db()
 
 PICKS_CACHE = {"status": "inactive", "picks": [], "last_update": None}
