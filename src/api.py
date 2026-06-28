@@ -6,12 +6,22 @@ from fastapi import HTTPException, Header, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse
 import os
+import secrets
 from datetime import datetime
 from typing import Optional
 from src.routers.analizar_1x2 import router as analizar_router
 from src.database import init_db, get_metrics, get_history, settle_pick
 
-API_KEY = os.getenv("API_KEY", "survivor-ligamx-premium-2026")
+_API_KEY_ENV = os.getenv("API_KEY", "").strip()
+if _API_KEY_ENV:
+    API_KEY = _API_KEY_ENV
+else:
+    # Sin API_KEY en el entorno: clave EFÍMERA aleatoria (no una constante
+    # pública en el repo). Los endpoints protegidos quedan inaccesibles hasta
+    # configurar API_KEY. Define API_KEY en Render (env) y en GitHub (secret).
+    API_KEY = secrets.token_urlsafe(32)
+    print("⚠️  API_KEY no configurada; se generó una clave efímera aleatoria. "
+          "Define API_KEY en el entorno para acceso estable.")
 
 def verify_api_key(x_api_key: Optional[str] = Header(None)):
     if not x_api_key or x_api_key != API_KEY:
