@@ -18,6 +18,8 @@ def verify_api_key(x_api_key: Optional[str] = Header(None)):
 app = FastAPI(title="Survivor LigaMX API Premium", version="2.1.0", docs_url="/docs")
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["GET", "POST"], allow_headers=["*"])
 app.include_router(analizar_router)
+from src.routers.cron_router import router as cron_router
+app.include_router(cron_router)
 init_db()
 
 PICKS_CACHE = {"status": "inactive", "picks": [], "last_update": None}
