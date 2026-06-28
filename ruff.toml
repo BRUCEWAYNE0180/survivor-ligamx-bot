@@ -1,0 +1,18 @@
+# Configuración de ruff (linter). Objetivo: cazar BUGS reales (imports/vars sin
+# usar, f-strings vacías, nombres indefinidos) sin pelear con el estilo del
+# código heredado (punto y coma, largo de línea), para tener un gate util y verde.
+target-version = "py312"
+line-length = 120
+
+[lint]
+select = ["E", "F", "W"]
+ignore = [
+    "E501",  # line too long (no peleamos largo de linea)
+    "E402",  # import no al inicio (necesario con sys.path en scripts/entrypoints)
+    "E702",  # multiple statements (punto y coma; estilo del codigo viejo)
+    "E731",  # lambda asignada
+    "E741",  # nombre de variable ambiguo
+]
+
+[lint.per-file-ignores]
+"tests/*" = ["F811"]  # redefiniciones en fixtures de tests

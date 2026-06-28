@@ -29,7 +29,6 @@ import csv
 import json
 import re
 import sys
-import unicodedata
 from html.parser import HTMLParser
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Set, Tuple

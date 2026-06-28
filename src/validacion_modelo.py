@@ -17,7 +17,7 @@ Sin red propia (recibe resultados) ni momios. Informativo.
 """
 from __future__ import annotations
 
-from typing import Any, Dict, List, Sequence
+from typing import Any, Dict, Sequence
 
 try:
     import poisson_model as pm

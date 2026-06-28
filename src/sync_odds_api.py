@@ -4,10 +4,9 @@ from __future__ import annotations
 import argparse
 import json
 import os
-import unicodedata
 import urllib.parse
 import urllib.request
-from datetime import datetime, timezone
+from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
