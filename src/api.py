@@ -10,6 +10,7 @@ from datetime import datetime, timedelta
 from typing import Optional
 from src.poisson_model import calibrate_and_predict
 from src.routers.analizar_1x2 import router as analizar_router
+from src.market_analyzer import analyze_additional_markets
 from src.telegram_alerts import send_high_ev_alerts
 from src.database import init_db, save_pick, get_metrics
 
@@ -186,6 +187,17 @@ def dashboard():
 @limiter.limit("5/minute")
 def alerts_high_ev(request: Request):
     return send_high_ev_alerts()
+
+
+@app.get("/analyze/markets", summary="Analizar mercados adicionales", tags=["Analysis"])
+@limiter.limit("10/minute")
+def analyze_markets(request: Request, home: float, draw: float, away: float):
+    """Analiza Over/Under, BTTS y Doble Oportunidad"""
+    try:
+        result = analyze_additional_markets(home, draw, away)
+        return {"status": "success", "markets": result}
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
 
 if __name__ == "__main__":
     import uvicorn
