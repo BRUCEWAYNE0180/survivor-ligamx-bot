@@ -1,4 +1,6 @@
 fastapi
+feedparser
+numpy
 pandas
 psycopg2-binary
 pyarrow
