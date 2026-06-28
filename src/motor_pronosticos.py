@@ -123,19 +123,20 @@ def generar_pronosticos(
     }
 
 
-def mejor_pick_survivor(
+def mejores_picks_survivor(
     pronosticos: Sequence[Dict[str, Any]],
     equipos_usados: Optional[Sequence[str]] = None,
     motivacion: Optional[Dict[str, Dict[str, Any]]] = None,
-) -> Optional[Dict[str, Any]]:
+    n: int = 3,
+) -> List[Dict[str, Any]]:
     """
-    Mejor candidato de Survivor: equipo con mayor probabilidad de NO perder,
-    excluyendo los ya usados.
+    Devuelve los `n` mejores candidatos de Survivor (mayor prob. de NO perder),
+    excluyendo los ya usados, ordenados de mejor a peor.
 
-    Si se pasa `motivacion` ({equipo_norm: {motivacion_nivel, zona}}), se usa
-    como CONTEXTO y DESEMPATE: ante probabilidades parejas, se prefiere enfrentar
-    a un rival con MENOR motivación (p. ej. ya eliminado). El criterio principal
-    sigue siendo la probabilidad del modelo (fuente de verdad).
+    `motivacion` ({equipo_norm: {motivacion_nivel, zona}}) se usa como CONTEXTO y
+    DESEMPATE: ante probabilidades parejas, se prefiere enfrentar a un rival con
+    MENOR motivación (p. ej. ya eliminado). El criterio principal es la
+    probabilidad del modelo (fuente de verdad).
     """
     usados = {_norm(e) for e in (equipos_usados or [])}
     mot = motivacion or {}
@@ -153,10 +154,21 @@ def mejor_pick_survivor(
                 "motivacion_propia": (mot.get(_norm(equipo)) or {}).get("motivacion_nivel"),
                 "rival_motivacion": (mot.get(_norm(rival)) or {}).get("motivacion_nivel"),
             })
-    if not candidatos:
-        return None
-    # Criterio: no_perder_pct (principal) y, como desempate, rival menos motivado.
-    return max(candidatos, key=lambda c: (c["no_perder_pct"], _rank_motivacion(c["rival_motivacion"])))
+    candidatos.sort(
+        key=lambda c: (c["no_perder_pct"], _rank_motivacion(c["rival_motivacion"])),
+        reverse=True,
+    )
+    return candidatos[: max(0, n)]
+
+
+def mejor_pick_survivor(
+    pronosticos: Sequence[Dict[str, Any]],
+    equipos_usados: Optional[Sequence[str]] = None,
+    motivacion: Optional[Dict[str, Dict[str, Any]]] = None,
+) -> Optional[Dict[str, Any]]:
+    """Mejor candidato de Survivor (el #1 de `mejores_picks_survivor`)."""
+    tops = mejores_picks_survivor(pronosticos, equipos_usados, motivacion, n=1)
+    return tops[0] if tops else None
 
 
 # Rango de "qué tan conveniente es el rival" (rival menos motivado = más seguro).

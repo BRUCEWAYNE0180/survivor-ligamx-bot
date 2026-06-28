@@ -90,6 +90,35 @@ def survivor(excluir: str = "") -> Dict[str, Any]:
     }
 
 
+@router.get("/jornada", summary="Vista de jornada: predicciones + pick + top-3 + motivación + momios")
+def jornada(excluir: str = "") -> Dict[str, Any]:
+    """
+    Todo-en-uno para decidir la semana: predicciones, mejor pick de Survivor +
+    top-3, motivación de la tabla y comparación vs mercado (si hay momios).
+    """
+    data = _obtener()
+    pronos = data.get("pronosticos", [])
+    comp = mercado_mod.comparar_pronosticos(pronos)  # momios gated (no-op sin key)
+    pronos = comp.get("pronosticos", pronos)
+    try:
+        motivacion = motor.motivacion_por_equipo()
+    except Exception:  # pragma: no cover - fallback defensivo de red
+        motivacion = {}
+    usados = [e.strip() for e in excluir.split(",") if e.strip()]
+    top = motor.mejores_picks_survivor(pronos, usados, motivacion, n=3)
+    return {
+        "generado_utc": data.get("generado_utc"),
+        "fuente_datos": data.get("fuente_datos"),
+        "equipos_excluidos": usados,
+        "pick_survivor": top[0] if top else None,
+        "top_picks": top,
+        "mercado_habilitado": comp.get("mercado_habilitado", False),
+        "partidos_con_momios": comp.get("partidos_con_momios", 0),
+        "pronosticos": pronos,
+        "decision": data.get("decision"),
+    }
+
+
 @router.get("/tabla", summary="Tabla Liga MX (ESPN) + motivación por equipo")
 def tabla() -> Dict[str, Any]:
     """Tabla general con zona de clasificación y motivación por equipo."""

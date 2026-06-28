@@ -88,6 +88,16 @@ class TestEndpoints(unittest.TestCase):
         self.assertTrue(r["ok_global"])
         self.assertTrue(r["fuentes"]["espn"]["ok"])
 
+    def test_jornada_todo_en_uno(self):
+        with mock.patch.object(pred.motor, "generar_pronosticos", return_value=_fake_data()):
+            with mock.patch.object(pred.motor, "motivacion_por_equipo", return_value={}):
+                with mock.patch.object(pred.mercado_mod, "mercado_habilitado", return_value=False):
+                    r = pred.jornada()
+        self.assertEqual(r["fuente_datos"], "ESPN")
+        self.assertEqual(r["pick_survivor"]["equipo"], "América")
+        self.assertTrue(len(r["top_picks"]) >= 1)
+        self.assertFalse(r["mercado_habilitado"])
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)

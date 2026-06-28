@@ -35,7 +35,8 @@ class TestConstruirMensaje(unittest.TestCase):
     def test_incluye_partido_y_survivor(self):
         msg = tp.construir_mensaje(_resultado())
         self.assertIn("América vs Toluca", msg)
-        self.assertIn("SURVIVOR sugerido", msg)
+        self.assertIn("SURVIVOR", msg)
+        self.assertIn("🥇", msg)  # ranking top-3
         self.assertIn("Gana Local", msg)
 
     def test_incluye_disclaimer(self):
@@ -94,7 +95,7 @@ class TestMercadoYMotivacion(unittest.TestCase):
     def test_motivacion_rival_en_pick(self):
         motivacion = {"toluca": {"motivacion_nivel": "baja"}}
         msg = tp.construir_mensaje(_resultado(), motivacion=motivacion)
-        self.assertIn("rival motivación: baja", msg)
+        self.assertIn("rival mot.: baja", msg)
 
 
 if __name__ == "__main__":
