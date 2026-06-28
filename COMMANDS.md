@@ -50,6 +50,34 @@ modelo, desglosado por local/visitante, nivel de confianza y partidos cerrados
 ('under'). Útil para no quemar el Survivor con un favorito engañoso. También en
 la web: `GET /analisis/riesgo`.
 
+## Planificador de temporada (estrategia Survivor)
+
+```bash
+python3 src/planificador_survivor.py   # qué equipo usar en cada jornada
+```
+
+Resuelve el problema de asignación de TODA la temporada: 1 equipo por jornada,
+sin repetir, maximizando supervivencia (no perder) y victorias. Mira el calendario
+completo para "guardar" equipos fuertes a las jornadas difíciles. También en la
+web: `GET /plan-survivor?excluir=America,Toluca&peso_victoria=0.5`.
+
+Requiere `data/calendario.json` con el calendario completo (se publica cerca del
+arranque, ~17-jul). Esquema:
+
+```json
+[
+  {"jornada": 1, "partidos": [
+    {"home_team": "América", "away_team": "Atlético de San Luis"},
+    {"home_team": "Cruz Azul", "away_team": "Querétaro"}
+  ]},
+  {"jornada": 2, "partidos": [ ... ]}
+]
+```
+
+> Importante: los nombres de los equipos deben coincidir con los de ESPN (con
+> acentos): `América`, `Atlético de San Luis`, `Mazatlán FC`, `Querétaro`,
+> `Tigres UANL`, `Pumas UNAM`, `Guadalajara`, `León`, `FC Juárez`, etc.
+
 ## Telegram
 
 Telegram es **opcional e informativo**: el bot **nunca** envía picks automáticos.
@@ -96,8 +124,8 @@ python3 scripts/final_security_gate.py
 
 `/predicciones` · `/survivor?excluir=` · `/jornada` (todo-en-uno) · `/tabla` ·
 `/valor` · `/valor/diagnostico` · `/health/fuentes` · `/analisis/riesgo` ·
-`/stats` · `/history` · `/dashboard` · `/health` · `/cron/backtest`
-(validación real diaria) · `/docs`.
+`/plan-survivor` · `/stats` · `/history` · `/dashboard` · `/health` ·
+`/cron/backtest` (validación real diaria) · `/docs`.
 
 ## Tests y lint
 
