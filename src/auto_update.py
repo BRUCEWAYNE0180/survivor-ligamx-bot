@@ -31,11 +31,11 @@ def run_script(script_name, description):
 
 def main():
     log("=" * 70)
-    log("INICIANDO ACTUALIZACIÓN AUTOMÁTICA (ESPN)")
+    log("INICIANDO ACTUALIZACIÓN AUTOMÁTICA (Multi-Source)")
     log("=" * 70)
     
-    # Scraper principal: ESPN (gratis y funciona)
-    success1 = run_script("scraper.py", "Scraper ESPN Liga MX")
+    # Scraper multi-fuente (ESPN + respaldos)
+    success1 = run_script("scraper_multi_source.py", "Scraper Multi-Fuente")
     
     # Análisis de confianza
     success2 = run_script("data_confidence.py", "Análisis de confianza")
