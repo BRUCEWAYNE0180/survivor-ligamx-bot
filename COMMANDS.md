@@ -39,6 +39,17 @@ python3 src/validacion_modelo.py      # accuracy / Brier contra resultados reale
 python3 src/simulador_survivor.py     # ¿cuántas jornadas sobrevives?
 ```
 
+## Análisis de riesgo: ¿cuándo falla el favorito?
+
+```bash
+python3 src/analisis_riesgo.py        # tasas reales de fallo del favorito
+```
+
+Recorre el histórico real (walk-forward) y mide cuándo NO gana el favorito del
+modelo, desglosado por local/visitante, nivel de confianza y partidos cerrados
+('under'). Útil para no quemar el Survivor con un favorito engañoso. También en
+la web: `GET /analisis/riesgo`.
+
 ## Telegram
 
 Telegram es **opcional e informativo**: el bot **nunca** envía picks automáticos.
@@ -84,8 +95,9 @@ python3 scripts/final_security_gate.py
 ## Endpoints web (FastAPI en Render)
 
 `/predicciones` · `/survivor?excluir=` · `/jornada` (todo-en-uno) · `/tabla` ·
-`/valor` · `/valor/diagnostico` · `/health/fuentes` · `/stats` · `/history` ·
-`/dashboard` · `/health` · `/cron/backtest` (validación real diaria) · `/docs`.
+`/valor` · `/valor/diagnostico` · `/health/fuentes` · `/analisis/riesgo` ·
+`/stats` · `/history` · `/dashboard` · `/health` · `/cron/backtest`
+(validación real diaria) · `/docs`.
 
 ## Tests y lint
 
