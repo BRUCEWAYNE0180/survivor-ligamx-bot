@@ -116,18 +116,35 @@ class TestMercadoYMotivacion(unittest.TestCase):
     def test_linea_mercado_aparece(self):
         res = _resultado()
         res["pronosticos"][0]["mercado"] = {
-            "1x2": {"favorito_mercado": "local", "hay_valor": True, "valor_en": "local"},
-            "over_under": {"mercado_ve": "explosivo", "hay_valor": False, "valor_en": None},
+            "1x2": {"favorito_mercado": "local", "hay_valor": True, "valor_en": "local",
+                    "momios": {"local": 1.85, "empate": 3.40, "visita": 4.50}},
+            "over_under": {"mercado_ve": "explosivo", "hay_valor": False, "valor_en": None,
+                           "linea": 2.5, "momios": {"over": 1.90, "under": 1.95}},
             "handicap": {"favorito": "local", "linea": -0.5},
         }
         msg = tp.construir_mensaje(res)
-        self.assertIn("💰 Mercado:", msg)
+        self.assertIn("📈 Mercado ve:", msg)
         self.assertIn("fav local", msg)
         self.assertIn("explosivo", msg)
 
+    def test_momios_reales_aparecen(self):
+        res = _resultado()
+        res["pronosticos"][0]["mercado"] = {
+            "1x2": {"favorito_mercado": "local",
+                    "momios": {"local": 1.85, "empate": 3.40, "visita": 4.50}},
+            "over_under": {"mercado_ve": "explosivo", "linea": 2.5,
+                           "momios": {"over": 1.90, "under": 1.95}},
+        }
+        msg = tp.construir_mensaje(res)
+        self.assertIn("💰 Momios:", msg)
+        self.assertIn("América 1.85", msg)
+        self.assertIn("Toluca 4.5", msg)
+        self.assertIn("Over 1.9", msg)
+
     def test_sin_mercado_no_pone_linea(self):
         msg = tp.construir_mensaje(_resultado())
-        self.assertNotIn("💰 Mercado:", msg)
+        self.assertNotIn("💰 Momios:", msg)
+        self.assertNotIn("📈 Mercado ve:", msg)
 
     def test_motivacion_rival_en_pick(self):
         motivacion = {"toluca": {"motivacion_nivel": "baja"}}

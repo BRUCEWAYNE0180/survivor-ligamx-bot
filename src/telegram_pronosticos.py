@@ -126,6 +126,31 @@ def _resumen_mercado(mercado: Optional[Dict[str, Any]]) -> Optional[str]:
     return " · ".join(partes) if partes else None
 
 
+def _lineas_mercado(p: Dict[str, Any]) -> List[str]:
+    """Líneas con los momios reales del mercado (si hay) + lectura del mercado."""
+    mercado = p.get("mercado")
+    if not mercado:
+        return []
+    local = p.get("local", "Local")
+    visita = p.get("visitante", "Visita")
+    out: List[str] = []
+    o = mercado.get("1x2") or {}
+    m = o.get("momios") or {}
+    if m.get("local") and m.get("empate") and m.get("visita"):
+        out.append(
+            f"     💰 Momios: {local} {m['local']} · Empate {m['empate']} · {visita} {m['visita']}"
+        )
+    ou = mercado.get("over_under") or {}
+    mou = ou.get("momios") or {}
+    if mou.get("over") and mou.get("under"):
+        linea = ou.get("linea", 2.5)
+        out.append(f"        O/U {linea}: Over {mou['over']} · Under {mou['under']}")
+    resumen = _resumen_mercado(mercado)
+    if resumen:
+        out.append(f"     📈 Mercado ve: {resumen}")
+    return out
+
+
 def _pick_club(p: Dict[str, Any]) -> str:
     """Traduce el pick 1X2 al nombre real del club (o 'Empate')."""
     pick = p.get("pick_1x2", "")
@@ -224,9 +249,7 @@ def construir_mensaje(
                 lineas.append(f"     💡 {p['explicacion_ou']}")
             if p.get("precaucion") and p.get("motivos_alerta"):
                 lineas.append(f"     {p['nivel_alerta']}: {' '.join(p['motivos_alerta'])}")
-            resumen = _resumen_mercado(p.get("mercado"))
-            if resumen:
-                lineas.append(f"     💰 Mercado: {resumen}")
+            lineas.extend(_lineas_mercado(p))
     else:
         lineas.append(div)
         lineas.append("Sin pronósticos disponibles (faltan datos de ESPN o fixtures).")
