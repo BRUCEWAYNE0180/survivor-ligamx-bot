@@ -102,7 +102,21 @@ def _contexto_pick(pick: Dict[str, Any]) -> Dict[str, Any]:
             home, away = equipo, rival
         else:
             home, away = rival, equipo
-        return lmx.resumen_partido(home, away)
+        dossier = lmx.resumen_partido(home, away)
+        # Análisis de IA (Groq) sobre las noticias reales (opcional; igual que Telegram).
+        try:
+            try:
+                import analista_ia as ia
+            except ImportError:  # pragma: no cover
+                from src import analista_ia as ia  # type: ignore
+            if ia.habilitado() and isinstance(dossier, dict):
+                dossier["analisis_ia"] = ia.analizar_noticias(
+                    [dossier.get("home", home), dossier.get("away", away)],
+                    dossier.get("noticias", []),
+                )
+        except Exception:  # pragma: no cover - IA nunca debe tumbar la jornada
+            pass
+        return dossier
     except Exception:  # pragma: no cover - fallback defensivo de red
         return {}
 
