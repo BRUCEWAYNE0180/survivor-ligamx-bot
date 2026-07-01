@@ -180,6 +180,18 @@ class TestNoticias(unittest.TestCase):
         {"id": 3, "title": "Media", "source": "Z", "link": "http://z", "published_at": "2026-07-02T10:00:00"},
     ]
 
+    def test_noticias_usa_365scores_y_normaliza(self):
+        # /365scores/news usa 'url'/'image', no 'link'/'image_url'.
+        raw365 = [{"id": 9, "title": "Fichaje bomba", "url": "http://bolavip/x",
+                   "image": "http://img", "published_at": "2026-07-03", "is_magazine": False}]
+        with mock.patch.object(api, "_get", return_value=raw365) as g:
+            out = api.noticias()
+            g.assert_called_once_with("/365scores/news")
+        self.assertEqual(out[0]["title"], "Fichaje bomba")
+        self.assertEqual(out[0]["link"], "http://bolavip/x")      # url -> link
+        self.assertEqual(out[0]["source"], "365Scores")
+        self.assertEqual(out[0]["image_url"], "http://img")       # image -> image_url
+
     def test_compacta_y_ordena_por_fecha(self):
         with mock.patch.object(api, "noticias", return_value=self._NEWS):
             items = api.noticias_recientes(limit=2)

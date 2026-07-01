@@ -379,7 +379,28 @@ def goleadores(limit: int = 20, season: Optional[str] = None) -> List[Dict[str, 
 
 
 def noticias() -> List[Dict[str, Any]]:
-    """/news — noticias Liga MX (Google News RSS): fichajes, lesiones, bajas."""
+    """
+    Noticias Liga MX desde **365Scores** (plataforma real, vía /365scores/news),
+    NO Google News. Normaliza a un esquema estable:
+    {title, link, description, source, image_url, published_at}.
+    """
+    out: List[Dict[str, Any]] = []
+    for n in _get("/365scores/news"):
+        if not isinstance(n, dict):
+            continue
+        out.append({
+            "title": n.get("title", ""),
+            "link": n.get("url", ""),
+            "description": n.get("description", ""),
+            "source": "365Scores",
+            "image_url": n.get("image", ""),
+            "published_at": n.get("published_at", ""),
+        })
+    return out
+
+
+def noticias_google() -> List[Dict[str, Any]]:
+    """/news — noticias vía Google News RSS (fuente secundaria/agregador)."""
     return _get("/news")
 
 
