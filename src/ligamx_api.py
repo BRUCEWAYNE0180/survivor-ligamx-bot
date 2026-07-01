@@ -381,6 +381,27 @@ def noticias() -> List[Dict[str, Any]]:
     return _get("/news")
 
 
+def noticias_recientes(limit: int = 10) -> List[Dict[str, Any]]:
+    """
+    Noticias recientes en forma COMPACTA (title, fuente, publicado, link),
+    listas para mostrar/mandar. Ordenadas por fecha de publicación (recientes
+    primero). Tolerante: si la API falla, propaga el error al caller.
+    """
+    crudas = noticias()
+    items: List[Dict[str, Any]] = []
+    for n in crudas:
+        if not isinstance(n, dict):
+            continue
+        items.append({
+            "titulo": n.get("title", ""),
+            "fuente": n.get("source", ""),
+            "publicado": n.get("published_at", ""),
+            "link": n.get("link", ""),
+        })
+    items.sort(key=lambda x: str(x.get("publicado") or ""), reverse=True)
+    return items[: max(0, limit)]
+
+
 def jugadores_en_riesgo() -> Any:
     """/players/discipline — jugadores con tarjetas / riesgo de suspensión."""
     return _get("/players/discipline")

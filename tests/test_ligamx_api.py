@@ -173,6 +173,26 @@ class TestPredecir(unittest.TestCase):
             self.assertEqual(kwargs["params"]["away"], 226)
 
 
+class TestNoticias(unittest.TestCase):
+    _NEWS = [
+        {"id": 1, "title": "Vieja", "source": "X", "link": "http://x", "published_at": "2026-07-01T10:00:00"},
+        {"id": 2, "title": "Nueva", "source": "Y", "link": "http://y", "published_at": "2026-07-03T10:00:00"},
+        {"id": 3, "title": "Media", "source": "Z", "link": "http://z", "published_at": "2026-07-02T10:00:00"},
+    ]
+
+    def test_compacta_y_ordena_por_fecha(self):
+        with mock.patch.object(api, "noticias", return_value=self._NEWS):
+            items = api.noticias_recientes(limit=2)
+        self.assertEqual(len(items), 2)
+        self.assertEqual(items[0]["titulo"], "Nueva")   # más reciente primero
+        self.assertEqual(items[1]["titulo"], "Media")
+        self.assertEqual(set(items[0].keys()), {"titulo", "fuente", "publicado", "link"})
+
+    def test_limit_cero(self):
+        with mock.patch.object(api, "noticias", return_value=self._NEWS):
+            self.assertEqual(api.noticias_recientes(limit=0), [])
+
+
 _TEAMS = [
     {"id": 205, "name": "Club América"},
     {"id": 234, "name": "Pachuca"},
