@@ -93,6 +93,15 @@ def _formatear_contexto(ctx: Optional[Dict[str, Any]]) -> List[str]:
             titulo = n.get("titulo", "") if isinstance(n, dict) else str(n)
             if titulo:
                 lineas.append(f"      • {titulo}")
+    ia = ctx.get("analisis_ia") if isinstance(ctx.get("analisis_ia"), dict) else None
+    if ia and ia.get("disponible") and ia.get("riesgos"):
+        lineas.append("    🤖 IA — señales de riesgo (de las noticias):")
+        for r in ia["riesgos"][:4]:
+            eq = r.get("equipo", "")
+            tipo = r.get("tipo", "")
+            resumen = r.get("resumen", "")
+            if resumen:
+                lineas.append(f"      ⚠️ {eq} [{tipo}]: {resumen}")
     return lineas
 
 
@@ -236,7 +245,21 @@ def _contexto_top_pick(pronosticos: List[Dict[str, Any]],
             home, away = pk["equipo"], pk["rival"]
         else:
             home, away = pk["rival"], pk["equipo"]
-        return lmx.resumen_partido(home, away)
+        dossier = lmx.resumen_partido(home, away)
+        # Análisis de IA (Groq) sobre las noticias reales del partido (opcional).
+        try:
+            try:
+                import analista_ia as ia
+            except ImportError:  # pragma: no cover
+                from src import analista_ia as ia  # type: ignore
+            if ia.habilitado() and isinstance(dossier, dict):
+                dossier["analisis_ia"] = ia.analizar_noticias(
+                    [dossier.get("home", home), dossier.get("away", away)],
+                    dossier.get("noticias", []),
+                )
+        except Exception:  # pragma: no cover - IA nunca debe tumbar el pick
+            pass
+        return dossier
     except Exception:  # pragma: no cover - nunca debe tumbar el envío
         return None
 

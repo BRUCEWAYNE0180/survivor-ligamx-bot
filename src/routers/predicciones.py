@@ -424,3 +424,25 @@ def historial_rentabilidad() -> Dict[str, Any]:
     except Exception as exc:  # pragma: no cover - fallback defensivo
         return {"resueltos": 0, "error": str(exc),
                 "decision": "INFORMATIVO / REVISIÓN HUMANA"}
+
+
+@router.get("/analisis-ia", summary="Análisis de riesgo por IA (Groq) sobre noticias reales")
+def analisis_ia(home: str, away: str) -> Dict[str, Any]:
+    """
+    Usa IA (Groq) para EXTRAER señales de riesgo (lesión/suspensión/duda/rotación)
+    de las noticias reales de ambos equipos, citando el titular fuente. Opcional:
+    requiere GROQ_API_KEY; sin ella responde `disponible: false`. No inventa datos.
+    """
+    if not home or not away:
+        return {"disponible": False, "error": "Faltan 'home' y 'away'.",
+                "decision": "INFORMATIVO / REVISIÓN HUMANA"}
+    try:
+        try:
+            import analista_ia as ia
+        except ImportError:  # pragma: no cover
+            from src import analista_ia as ia  # type: ignore
+        return {**ia.analizar_partido(home, away),
+                "decision": "INFORMATIVO / REVISIÓN HUMANA"}
+    except Exception as exc:  # pragma: no cover - fallback defensivo
+        return {"disponible": False, "error": str(exc),
+                "decision": "INFORMATIVO / REVISIÓN HUMANA"}
