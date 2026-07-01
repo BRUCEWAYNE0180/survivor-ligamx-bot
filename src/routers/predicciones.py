@@ -296,3 +296,19 @@ def analisis_partido(home: str, away: str, prediccion: bool = True) -> Dict[str,
     except Exception as exc:  # pragma: no cover - fallback defensivo de red
         return {"home": home, "away": away, "error": str(exc),
                 "decision": "INFORMATIVO / REVISIÓN HUMANA"}
+
+
+@router.get("/noticias", summary="Noticias Liga MX (fichajes/lesiones/bajas) vía Liga MX API")
+def noticias(limit: int = 10) -> Dict[str, Any]:
+    """
+    Noticias recientes de Liga MX (Google News RSS) tomadas de la Liga MX API:
+    fichajes, lesiones, bajas y boletines. Compacto (título, fuente, fecha, link).
+    Informativo; útil como contexto de riesgo (lesiones/suspensiones) para el pick.
+    """
+    try:
+        items = lmx.noticias_recientes(limit=limit)
+        return {"total": len(items), "noticias": items,
+                "decision": "INFORMATIVO / REVISIÓN HUMANA"}
+    except Exception as exc:  # pragma: no cover - fallback defensivo de red
+        return {"total": 0, "noticias": [], "error": str(exc),
+                "decision": "INFORMATIVO / REVISIÓN HUMANA"}
