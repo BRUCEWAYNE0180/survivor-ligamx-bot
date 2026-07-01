@@ -298,12 +298,27 @@ def analisis_partido(home: str, away: str, prediccion: bool = True) -> Dict[str,
                 "decision": "INFORMATIVO / REVISIÓN HUMANA"}
 
 
+@router.get("/jugadores-riesgo", summary="Jugadores en riesgo de suspensión (Liga MX API)")
+def jugadores_riesgo(limit: int = 20) -> Dict[str, Any]:
+    """
+    Jugadores de toda la liga en riesgo de suspensión por acumulación de tarjetas
+    (vía Liga MX API /players/discipline). Contexto de riesgo para el pick.
+    En pretemporada viene vacío. Informativo.
+    """
+    try:
+        return {**lmx.jugadores_en_riesgo_liga(limit=limit),
+                "decision": "INFORMATIVO / REVISIÓN HUMANA"}
+    except Exception as exc:  # pragma: no cover - fallback defensivo de red
+        return {"count": 0, "jugadores": [], "error": str(exc),
+                "decision": "INFORMATIVO / REVISIÓN HUMANA"}
+
+
 @router.get("/noticias", summary="Noticias Liga MX (fichajes/lesiones/bajas) vía Liga MX API")
 def noticias(limit: int = 10) -> Dict[str, Any]:
     """
-    Noticias recientes de Liga MX (Google News RSS) tomadas de la Liga MX API:
-    fichajes, lesiones, bajas y boletines. Compacto (título, fuente, fecha, link).
-    Informativo; útil como contexto de riesgo (lesiones/suspensiones) para el pick.
+    Noticias recientes de Liga MX (365Scores + Google News) tomadas de la Liga MX
+    API: fichajes, lesiones, bajas y boletines. Compacto (título, fuente, fecha,
+    link). Informativo; útil como contexto de riesgo para el pick.
     """
     try:
         items = lmx.noticias_recientes(limit=limit)
