@@ -141,6 +141,11 @@ def comparar_1x2(
 
     return {
         "favorito_mercado": favorito,
+        "momios": {
+            "local": round(float(momio_local), 2),
+            "empate": round(float(momio_empate), 2),
+            "visita": round(float(momio_visita), 2),
+        },
         "prob_modelo_pct": [round(p * 100, 2) for p in pmod],
         "prob_mercado_pct": [round(p * 100, 2) for p in pmkt],
         "vig_pct": round(mercado["vig"] * 100, 2),
@@ -179,6 +184,7 @@ def comparar_totales(
     return {
         "linea": linea,
         "mercado_ve": "explosivo" if p_over_mkt >= 0.5 else "cauteloso",
+        "momios": {"over": round(float(momio_over), 2), "under": round(float(momio_under), 2)},
         "prob_over_modelo_pct": round(p_over * 100, 2),
         "prob_over_mercado_pct": round(p_over_mkt * 100, 2),
         "diff_over_pct": round(diff * 100, 2),
