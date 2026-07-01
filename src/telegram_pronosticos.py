@@ -142,71 +142,78 @@ def construir_mensaje(
     `advertencia`: nota de cautela (p. ej. arranque de torneo) a mostrar.
     """
     pronosticos = resultado.get("pronosticos", [])
-    fuente = resultado.get("fuente_datos", "?")
-    fecha = resultado.get("generado_utc", "")
+    fecha = str(resultado.get("generado_utc", "")).replace("T", " ").replace("Z", " UTC")
 
+    div = "━━━━━━━━━━━━━━━━━━"
     lineas = [
-        "🔮 <b>PRONÓSTICOS LIGA MX</b> (modelo · datos ESPN)",
-        f"<i>Fuente: {fuente} · {fecha}</i>",
-        "",
+        "🔮 <b>PRONÓSTICOS LIGA MX</b>",
+        f"<i>Modelo ESPN + Poisson · {fecha}</i>",
+        div,
     ]
 
     if tops is None:
         tops = motor.mejores_picks_survivor(pronosticos, equipos_usados, motivacion, n=3)
     if tops:
-        lineas.append("🎯 <b>SURVIVOR — top 3:</b>")
+        lineas.append("🎯 <b>SURVIVOR</b>")
         if advertencia:
             lineas.append(f"<i>{advertencia}</i>")
-        medallas = ["🥇", "🥈", "🥉"]
-        for i, pk in enumerate(tops):
-            extra = f" · rival mot.: {pk['rival_motivacion']}" if pk.get("rival_motivacion") else ""
-            gana = pk.get("prob_victoria_pct")
-            g = f"gana {gana}% · " if gana is not None else ""
-            nivel = pk.get("nivel")
-            nv = f" [{nivel}]" if nivel else ""
-            estrella = " ⭐ RECOMENDADO" if i == 0 else ""
-            lineas.append(
-                f"{medallas[i] if i < 3 else '•'} {pk['equipo']} "
-                f"({pk['condicion']} vs {pk['rival']}) — {g}no-perder {pk['no_perder_pct']}%{nv}{extra}{estrella}"
-            )
-        # Recomendación explícita = el #1 (mayor confianza de no-perder + ganar).
+        lineas.append("")
+        # Pick recomendado (destacado).
         rec = tops[0]
-        lineas.append(
-            f"➡️ <b>Pick sugerido: {rec['equipo']}</b> "
-            f"(confianza {rec.get('nivel', '—')})"
-        )
+        gana = rec.get("prob_victoria_pct")
+        gtxt = f" · gana {gana}%" if gana is not None else ""
+        lineas.append(f"🥇 <b>PICK: {rec['equipo']}</b> — {rec['condicion']} vs {rec['rival']}")
+        lineas.append(f"     ✅ no-perder <b>{rec['no_perder_pct']}%</b>{gtxt} · confianza <b>{rec.get('nivel', '—')}</b>")
+        if motivacion:
+            mot_rival = motivacion.get(str(rec.get("rival", "")).lower(), {})
+            nivel_mot = mot_rival.get("motivacion_nivel")
+            if nivel_mot:
+                lineas.append(f"     📉 rival mot.: {nivel_mot}")
         if rec.get("razon"):
-            lineas.append(f"    <i>{rec['razon']}</i>")
+            lineas.append(f"     <i>{rec['razon']}</i>")
+        # Otras opciones (2º y 3º).
+        otras = tops[1:3]
+        if otras:
+            lineas.append("")
+            lineas.append("<b>Otras opciones:</b>")
+            medallas = ["🥈", "🥉"]
+            for i, pk in enumerate(otras):
+                nivel = f" [{pk['nivel']}]" if pk.get("nivel") else ""
+                lineas.append(
+                    f"{medallas[i]} {pk['equipo']} ({pk['condicion']} vs {pk['rival']}) "
+                    f"— no-perder {pk['no_perder_pct']}%{nivel}"
+                )
         contexto_lineas = _formatear_contexto(contexto_pick)
         if contexto_lineas:
             lineas.append("")
             lineas.extend(contexto_lineas)
-        lineas.append("")
 
     if pronosticos:
-        lineas.append("<b>Partidos:</b>")
+        lineas.append(div)
+        lineas.append("📋 <b>PARTIDOS DE LA JORNADA</b>")
         for p in pronosticos[:_MAX_PARTIDOS]:
-            conf = f" · confianza {p['nivel_confianza']}" if p.get("nivel_confianza") else ""
-            lineas.append(
-                f"⚽ {p['local']} vs {p['visitante']} → <b>{p['pick_1x2']}</b> "
-                f"(L{p['prob_local_pct']}/E{p['prob_empate_pct']}/V{p['prob_visitante_pct']}){conf}"
-            )
-            lineas.append(
-                f"    {p['pick_ou']} 2.5 · BTTS {p['pick_btts']} · marcador {p['marcador_mas_probable']}"
-            )
+            lineas.append("")
+            conf = f" · confianza <b>{p['nivel_confianza']}</b>" if p.get("nivel_confianza") else ""
+            prob_pick = p.get("prob_pick_pct")
+            pptxt = f" ({prob_pick}%)" if prob_pick is not None else ""
+            lineas.append(f"⚽ <b>{p['local']} vs {p['visitante']}</b>")
+            lineas.append(f"     🎯 {p['pick_1x2']}{pptxt}{conf}")
+            lineas.append(f"     📊 L {p['prob_local_pct']}% · E {p['prob_empate_pct']}% · V {p['prob_visitante_pct']}%")
+            lineas.append(f"     ⚖️ {p['pick_ou']} 2.5 · BTTS {p['pick_btts']} · marcador {p['marcador_mas_probable']}")
             if p.get("explicacion_1x2"):
-                lineas.append(f"    💡 {p['explicacion_1x2']}")
+                lineas.append(f"     💡 {p['explicacion_1x2']}")
             if p.get("explicacion_ou"):
-                lineas.append(f"    💡 {p['explicacion_ou']}")
+                lineas.append(f"     💡 {p['explicacion_ou']}")
             if p.get("precaucion") and p.get("motivos_alerta"):
-                lineas.append(f"    {p['nivel_alerta']}: {' '.join(p['motivos_alerta'])}")
+                lineas.append(f"     {p['nivel_alerta']}: {' '.join(p['motivos_alerta'])}")
             resumen = _resumen_mercado(p.get("mercado"))
             if resumen:
-                lineas.append(f"    💰 Mercado: {resumen}")
+                lineas.append(f"     💰 Mercado: {resumen}")
     else:
+        lineas.append(div)
         lineas.append("Sin pronósticos disponibles (faltan datos de ESPN o fixtures).")
 
-    lineas += ["", DISCLAIMER]
+    lineas += [div, DISCLAIMER]
     return "\n".join(lineas)
 
 
