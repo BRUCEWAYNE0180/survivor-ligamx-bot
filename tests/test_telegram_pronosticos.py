@@ -316,3 +316,21 @@ class TestImpactoXI(unittest.TestCase):
         self.assertIn("Fuerza XI América: 82.5%", msg)
         self.assertIn("A. Zendejas (11.2%)", msg)
         self.assertIn("Fuerza XI Toluca: 100.0%", msg)
+
+
+class TestH2HDossier(unittest.TestCase):
+    def test_render_h2h_multitemporada(self):
+        ctx = {
+            "home": "América", "away": "Pachuca",
+            "h2h": {"team1": {"name": "América", "wins": 5}, "team2": {"name": "Pachuca", "wins": 5},
+                    "played": 14, "draws": 4, "seasons_covered": 9},
+        }
+        msg = "\n".join(tp._formatear_contexto(ctx))
+        self.assertIn("🤝 H2H (14 duelos, 9 temps)", msg)
+        self.assertIn("América 5V · 4E · 5V Pachuca", msg)
+
+    def test_sin_h2h_no_rompe(self):
+        ctx = {"home": "A", "away": "B", "h2h": None, "forma_local": "GGG"}
+        # No debe fallar ni renderizar H2H.
+        msg = "\n".join(tp._formatear_contexto(ctx))
+        self.assertNotIn("🤝 H2H", msg)
