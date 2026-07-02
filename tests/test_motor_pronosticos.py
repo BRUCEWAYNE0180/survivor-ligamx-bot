@@ -50,6 +50,23 @@ class TestGenerar(unittest.TestCase):
             p["no_perder_local_pct"], round(p["prob_local_pct"] + p["prob_empate_pct"], 2), places=1
         )
 
+    def test_h2h_usa_historico_mas_largo_de_la_api(self):
+        # Si la Liga MX API devuelve MÁS partidos, el H2H debe usarlos (no solo
+        # los inyectados del modelo). Verificamos que anotar_h2h reciba el largo.
+        from unittest import mock
+        fixtures = [{"home_team": "América", "away_team": "Toluca", "fecha": "x"}]
+        largo = _historico() * 3  # simula histórico multi-temporada más grande
+        capturado = {}
+
+        def _fake_anotar(pronos, resultados):
+            capturado["n"] = len(resultados)
+            return pronos
+
+        with mock.patch("ligamx_api.resultados_historicos", return_value=largo, create=True):
+            with mock.patch("matchup_h2h.anotar_h2h", side_effect=_fake_anotar, create=True):
+                mp.generar_pronosticos(fixtures=fixtures, resultados=_historico())
+        self.assertEqual(capturado.get("n"), len(largo))  # usó el histórico largo
+
     def test_incluye_explicaciones(self):
         fixtures = [{"home_team": "América", "away_team": "Toluca", "fecha": "x"}]
         p = mp.generar_pronosticos(fixtures=fixtures, resultados=_historico())["pronosticos"][0]
