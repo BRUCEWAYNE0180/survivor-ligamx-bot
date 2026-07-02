@@ -813,47 +813,56 @@ def enviar_pronosticos(equipos_usados: Optional[List[str]] = None,
 def construir_mensaje_seguimiento(items: List[Dict[str, Any]],
                                   descartados: Optional[List[str]] = None,
                                   recomendado: Optional[Dict[str, Any]] = None) -> str:
-    """Mensaje (HTML) con la lista de seguimiento secuencial del Survivor."""
+    """
+    Mensaje (HTML) centrado en UN pick claro y UN momento para actuar (no un menú).
+    El respaldo solo se menciona; el día del partido, el veredicto del XI decide
+    si se mantiene o se cambia.
+    """
     if not items:
         return ("📋 <b>LISTA DE SEGUIMIENTO</b>\n\n"
                 "Aún no hay candidatos (faltan datos de la jornada).\n\n"
                 f"{DISCLAIMER}")
-    rec = recomendado or items[0]
-    # Plan B = los demás candidatos (por si la alineación del recomendado sale mal).
-    plan_b = [it["equipo"] for it in items if it.get("equipo") != rec.get("equipo")][:2]
 
     def _sede(c: Dict[str, Any]) -> str:
         return "🏠 local" if c.get("condicion") == "Local" else "✈️ visita"
 
+    rec = recomendado or items[0]
+    # Item con hora/veredicto del recomendado (si está en la lista).
+    rec_item = next((it for it in items if it.get("equipo") == rec.get("equipo")), rec)
+    cuando = rec_item.get("cuando") or ""
+    ver = rec_item.get("veredicto") or {}
+    gana = rec.get("prob_victoria_pct")
+    gtxt = f" · gana {gana}%" if gana is not None else ""
+
     lineas = [
         "🎯 <b>TU PICK DE SURVIVOR</b>",
-        f"✅ <b>{rec['equipo']}</b> ({_sede(rec)} vs {rec['rival']}) — "
-        f"sobrevive {rec['no_perder_pct']}% · confianza {rec.get('nivel', '—')}",
+        f"✅ <b>{rec['equipo']}</b> ({_sede(rec)} vs {rec['rival']})",
+        f"     sobrevive {rec['no_perder_pct']}%{gtxt} · confianza <b>{rec.get('nivel', '—')}</b>",
     ]
-    if plan_b:
-        lineas.append(f"<i>Plan B automático si su alineación sale mermada: {', '.join(plan_b)}.</i>")
-    lineas += [
-        "",
-        "📋 <b>Seguimiento por hora</b> (revisa ~1h antes; el bot te dice si lo mantienes):",
-    ]
-    medallas = ["1️⃣", "2️⃣", "3️⃣", "4️⃣", "5️⃣", "6️⃣", "7️⃣", "8️⃣", "9️⃣"]
-    for i, it in enumerate(items):
-        n = medallas[i] if i < len(medallas) else "•"
-        cuando = f" — {it['cuando']}" if it.get("cuando") else ""
-        gana = it.get("prob_victoria_pct")
-        gtxt = f" · gana {gana}%" if gana is not None else ""
-        lineas.append(
-            f"{n} <b>{it['equipo']}</b> ({_sede(it)} vs {it['rival']}){cuando}"
-        )
-        lineas.append(
-            f"     ✅ sobrevive {it['no_perder_pct']}%{gtxt} · confianza <b>{it.get('nivel', '—')}</b>"
-        )
-        ver = it.get("veredicto") or {}
-        if ver:
-            lineas.append(f"     {ver.get('emoji', '⏳')} {ver.get('texto', '')}")
-    if descartados:
+    if cuando:
+        lineas.append(f"     📅 Juega: <b>{cuando}</b>")
+    lineas.append("")
+
+    estado = ver.get("estado", "PENDIENTE")
+    if estado == "CONFIRMA":
+        lineas.append("✅ <b>Alineación confirmada y completa.</b> Este es tu pick — mételo en PlayDoit.")
+    elif estado in ("DESCARTA", "DUDA"):
+        alt = next((it["equipo"] for it in items if it.get("equipo") != rec.get("equipo")), None)
+        lineas.append(f"{ver.get('emoji', '⚠️')} <b>Ojo:</b> {ver.get('texto', '')}")
+        if alt:
+            lineas.append(f"     👉 Mejor alternativa disponible: <b>{alt}</b>. Manda /seguir para verla.")
+    else:  # PENDIENTE
+        momento = f"el <b>{cuando.split()[0]}</b> " if cuando else ""
+        lineas.append(f"👉 <b>Qué hacer:</b> manda <code>/seguir</code> {momento}~1h antes de su partido "
+                      "y te confirmo su alineación. Antes de eso no necesitas hacer nada.")
+
+    otras = [it["equipo"] for it in items if it.get("equipo") != rec.get("equipo")][:2]
+    if otras:
         lineas.append("")
-        lineas.append(f"🚫 <b>Descartados esta jornada:</b> {', '.join(descartados)}")
+        lineas.append(f"🔁 <i>Respaldo (solo si su XI sale mal): {', '.join(otras)}.</i>")
+    lineas.append("")
+    lineas.append("💡 <i>Si te preocupa el internet, puedes meter tu pick en PlayDoit desde ya "
+                  "y cambiarlo solo si su alineación sale mermada.</i>")
     lineas += ["", DISCLAIMER]
     return "\n".join(lineas)
 
