@@ -258,3 +258,45 @@ class TestRecordatorio(unittest.TestCase):
         self.assertIn("JORNADA 1", msg)
         self.assertIn("/picks", msg)
         self.assertIn("Necaxa vs Atlante", msg)
+
+
+class TestAlertaXI(unittest.TestCase):
+    def test_falta_en_xi_detecta_ausente(self):
+        titulares = ["Luis Malagón", "Israel Reyes", "Henry Martín", "Álvaro Fidalgo"]
+        # A. Zendejas NO está en el XI -> debe salir como faltante.
+        faltan = tp._falta_en_xi(["A. Zendejas", "Henry Martín"], titulares)
+        self.assertIn("A. Zendejas", faltan)
+        self.assertNotIn("Henry Martín", faltan)
+
+    def test_falta_en_xi_sin_titulares_no_alerta(self):
+        self.assertEqual(tp._falta_en_xi(["A. Zendejas"], []), [])
+
+    def test_alerta_xi_por_condicion(self):
+        dossier = {
+            "home": "América", "away": "Toluca",
+            "jugadores_seguir": {"local": ["A. Zendejas"], "visita": ["Paulinho"]},
+            "alineacion": {"disponible": True, "equipos": [
+                {"equipo": "América", "condicion": "home", "titulares": ["Henry Martín", "Álvaro Fidalgo"]},
+                {"equipo": "Toluca", "condicion": "away", "titulares": ["Paulinho", "A. Canelo"]},
+            ]},
+        }
+        alerta = tp._alerta_xi(dossier)
+        self.assertEqual(alerta.get("local"), ["A. Zendejas"])  # Zendejas no es titular
+        self.assertNotIn("visita", alerta)  # Paulinho sí es titular
+
+    def test_alerta_xi_sin_alineacion(self):
+        self.assertEqual(tp._alerta_xi({"alineacion": {"disponible": False}}), {})
+
+    def test_render_alerta_xi_en_contexto(self):
+        ctx = {
+            "home": "América", "away": "Toluca",
+            "alineacion": {"disponible": True, "equipos": [
+                {"equipo": "América", "condicion": "home", "formacion": "4-3-3", "titulares": ["Henry Martín"]},
+            ]},
+            "alerta_xi": {"local": ["A. Zendejas"]},
+        }
+        lineas = tp._formatear_contexto(ctx)
+        msg = "\n".join(lineas)
+        self.assertIn("XI CONFIRMADO", msg)
+        self.assertIn("SIN titular clave", msg)
+        self.assertIn("A. Zendejas", msg)

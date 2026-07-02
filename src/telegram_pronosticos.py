@@ -32,6 +32,11 @@ try:
 except ImportError:  # pragma: no cover
     from src import calendario_contexto as calctx  # type: ignore
 
+try:
+    from team_normalizer import clean_team_name
+except ImportError:  # pragma: no cover
+    from src.team_normalizer import clean_team_name  # type: ignore
+
 DISCLAIMER = "ℹ️ Informativo / revisión humana. No es consejo de apuesta."
 _MAX_PARTIDOS = 9
 _CALENDARIO_PATH = Path(__file__).resolve().parents[1] / "data" / "calendario.json"
@@ -88,7 +93,15 @@ def _formatear_contexto(ctx: Optional[Dict[str, Any]]) -> List[str]:
             f"{e.get('equipo', '')} {e.get('formacion') or ''}".strip()
             for e in ali.get("equipos", []) if e.get("equipo")
         )
-        lineas.append(f"    📋 XI CONFIRMADO — {forms} ⚠️ revisa si tu favorito rotó (suplentes)")
+        lineas.append(f"    📋 XI CONFIRMADO — {forms}")
+        alerta_xi = ctx.get("alerta_xi") if isinstance(ctx.get("alerta_xi"), dict) else None
+        if alerta_xi and (alerta_xi.get("local") or alerta_xi.get("visita")):
+            for lado, equipo in (("local", ctx.get("home")), ("visita", ctx.get("away"))):
+                faltan = alerta_xi.get(lado) or []
+                if faltan:
+                    lineas.append(f"    🚨 OJO: {equipo} SIN titular clave — {', '.join(faltan)} (banca/fuera)")
+        else:
+            lineas.append("    ✅ XI sin ausencias clave detectadas")
     if pred:
         lineas.append(
             f"    2ª opinión API: L{pred['prob_local_pct']}/E{pred['prob_empate_pct']}/"
@@ -463,6 +476,49 @@ def enviar_mensaje(mensaje: str) -> bool:
         return False
 
 
+def _falta_en_xi(clave: List[str], titulares: List[str]) -> List[str]:
+    """Jugadores clave que NO aparecen en el XI titular (match por apellido)."""
+    tits = " | ".join(clean_team_name(t) for t in (titulares or []))
+    if not tits:
+        return []
+    faltan: List[str] = []
+    for p in clave or []:
+        toks = clean_team_name(p).split()
+        apellido = toks[-1] if toks else ""
+        if apellido and len(apellido) >= 3 and apellido not in tits:
+            faltan.append(p)
+    return faltan
+
+
+def _alerta_xi(dossier: Dict[str, Any]) -> Dict[str, List[str]]:
+    """
+    Cruza los jugadores a seguir con el XI confirmado. Devuelve
+    {'local':[...], 'visita':[...]} con los CLAVE que NO son titulares.
+    Vacío si no hay XI publicado aún.
+    """
+    ali = dossier.get("alineacion")
+    if not isinstance(ali, dict) or not ali.get("disponible"):
+        return {}
+    js = dossier.get("jugadores_seguir") or {}
+    tit_local: List[str] = []
+    tit_visita: List[str] = []
+    for e in ali.get("equipos", []):
+        cond = str(e.get("condicion", "")).lower()
+        tits = e.get("titulares", []) or []
+        if cond in ("home", "local"):
+            tit_local = tits
+        elif cond in ("away", "visita", "visitante"):
+            tit_visita = tits
+    out: Dict[str, List[str]] = {}
+    ml = _falta_en_xi(js.get("local", []), tit_local)
+    mv = _falta_en_xi(js.get("visita", []), tit_visita)
+    if ml:
+        out["local"] = ml
+    if mv:
+        out["visita"] = mv
+    return out
+
+
 def _fmt_fichajes(mov: Dict[str, Any]) -> str:
     """De {altas:[...], bajas:[...]} arma 'Altas: A, B · Bajas: C' o '' si vacío."""
     if not isinstance(mov, dict):
@@ -530,6 +586,14 @@ def _contexto_top_pick(pronosticos: List[Dict[str, Any]],
                 if loc or vis:
                     dossier["fichajes"] = {"local": loc, "visita": vis}
         except Exception:  # pragma: no cover - nunca debe tumbar el pick
+            pass
+        # Revisión de alineación: ¿falta un jugador clave en el XI confirmado?
+        try:
+            if isinstance(dossier, dict):
+                alerta = _alerta_xi(dossier)
+                if alerta:
+                    dossier["alerta_xi"] = alerta
+        except Exception:  # pragma: no cover
             pass
         return dossier
     except Exception:  # pragma: no cover - nunca debe tumbar el envío
