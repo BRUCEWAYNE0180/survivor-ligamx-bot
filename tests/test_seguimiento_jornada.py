@@ -91,4 +91,4 @@ class TestRenderDecisivo(unittest.TestCase):
         msg = tp.construir_mensaje_seguimiento(items, recomendado=_picks()[0])
         self.assertIn("TU PICK DE SURVIVOR", msg)
         self.assertIn("Cruz Azul", msg)          # el recomendado va en el encabezado
-        self.assertIn("Plan B automático", msg)  # los demás son respaldo, no menú
+        self.assertIn("Respaldo", msg)            # los demás son respaldo, no menú
