@@ -821,9 +821,13 @@ def construir_mensaje_seguimiento(items: List[Dict[str, Any]],
     rec = recomendado or items[0]
     # Plan B = los demás candidatos (por si la alineación del recomendado sale mal).
     plan_b = [it["equipo"] for it in items if it.get("equipo") != rec.get("equipo")][:2]
+
+    def _sede(c: Dict[str, Any]) -> str:
+        return "🏠 local" if c.get("condicion") == "Local" else "✈️ visita"
+
     lineas = [
         "🎯 <b>TU PICK DE SURVIVOR</b>",
-        f"✅ <b>{rec['equipo']}</b> ({rec['condicion']} vs {rec['rival']}) — "
+        f"✅ <b>{rec['equipo']}</b> ({_sede(rec)} vs {rec['rival']}) — "
         f"sobrevive {rec['no_perder_pct']}% · confianza {rec.get('nivel', '—')}",
     ]
     if plan_b:
@@ -839,7 +843,7 @@ def construir_mensaje_seguimiento(items: List[Dict[str, Any]],
         gana = it.get("prob_victoria_pct")
         gtxt = f" · gana {gana}%" if gana is not None else ""
         lineas.append(
-            f"{n} <b>{it['equipo']}</b> ({it['condicion']} vs {it['rival']}){cuando}"
+            f"{n} <b>{it['equipo']}</b> ({_sede(it)} vs {it['rival']}){cuando}"
         )
         lineas.append(
             f"     ✅ sobrevive {it['no_perder_pct']}%{gtxt} · confianza <b>{it.get('nivel', '—')}</b>"
