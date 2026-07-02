@@ -298,6 +298,14 @@ UMBRAL_CAUTELA_PARTIDOS = 27  # ~3 jornadas de 9 partidos
 PEN_VISITANTE = 4.0
 PEN_VISITANTE_CAUTELA = 8.0
 
+# Peso de la VICTORIA en el score del pick. El Survivor se gana sobreviviendo
+# (prioridad #1), pero el desempate entre finalistas es "más victorias / menos
+# empates": por eso ganar debe valer, no solo no-perder. El empate es push (no
+# suma), así que un pick que sobrevive GANANDO vale más que uno que sobrevive por
+# empate. En arranque (cautela) bajamos el peso: sobrevivir manda aún más.
+PESO_VICTORIA_PICK = 0.5
+PESO_VICTORIA_PICK_CAUTELA = 0.25
+
 
 def _razon_pick(c: Dict[str, Any], es_local: bool, cautela: bool) -> str:
     """Explica en una frase por qué (o por qué no) conviene este pick, con números."""
@@ -355,14 +363,17 @@ def mejores_picks_estrategico(
     """
     cautela = (partidos_jugados_torneo is None) or (partidos_jugados_torneo < UMBRAL_CAUTELA_PARTIDOS)
     pen = PEN_VISITANTE_CAUTELA if cautela else PEN_VISITANTE
+    peso_victoria = PESO_VICTORIA_PICK_CAUTELA if cautela else PESO_VICTORIA_PICK
 
     base = list(mejores_picks_survivor(pronosticos, equipos_usados, motivacion, n=10_000))
     for c in base:
         es_local = c.get("condicion") == "Local"
-        c["_score"] = float(c.get("no_perder_pct") or 0.0) - (0.0 if es_local else pen)
-        c["nivel"] = _nivel_estrategico(
-            float(c.get("no_perder_pct") or 0.0), c.get("prob_victoria_pct"), es_local, cautela
-        )
+        no_perder = float(c.get("no_perder_pct") or 0.0)
+        victoria = float(c.get("prob_victoria_pct") or 0.0)
+        # Sobrevivir manda (no_perder), pero premiamos GANAR (desempate del Survivor)
+        # y penalizamos al favorito visitante. El empate no aporta al score extra.
+        c["_score"] = no_perder + peso_victoria * victoria - (0.0 if es_local else pen)
+        c["nivel"] = _nivel_estrategico(no_perder, c.get("prob_victoria_pct"), es_local, cautela)
         c["razon"] = _razon_pick(c, es_local, cautela)
     base.sort(
         key=lambda c: (c["_score"], c.get("prob_victoria_pct") or 0.0, _rank_motivacion(c.get("rival_motivacion"))),
