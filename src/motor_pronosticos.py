@@ -194,13 +194,25 @@ def generar_pronosticos(
                 pron["fecha"] = fx.get("fecha", "")
                 pronosticos.append(pron)
 
-    # Señal "bestia negra" (H2H): avisa si el favorito no domina a ese rival.
+    # Señal "bestia negra" (H2H): usa el histórico MÁS LARGO disponible (todas las
+    # temporadas de la Liga MX API), no solo la ventana reciente del modelo.
     try:
         try:
             import matchup_h2h as mh2h
         except ImportError:  # pragma: no cover
             from src import matchup_h2h as mh2h  # type: ignore
-        pronosticos = mh2h.anotar_h2h(pronosticos, resultados)
+        h2h_hist = resultados
+        try:
+            try:
+                import ligamx_api as _lmx
+            except ImportError:  # pragma: no cover
+                from src import ligamx_api as _lmx  # type: ignore
+            largo = _lmx.resultados_historicos()  # todas las temporadas backfilleadas
+            if isinstance(largo, list) and len(largo) > len(resultados):
+                h2h_hist = largo
+        except Exception:  # pragma: no cover - API no disponible: usar el del modelo
+            pass
+        pronosticos = mh2h.anotar_h2h(pronosticos, h2h_hist)
     except Exception:  # pragma: no cover - nunca tumbar el pipeline
         pass
 
