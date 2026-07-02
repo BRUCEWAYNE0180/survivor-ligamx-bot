@@ -240,6 +240,19 @@ class TestEstrategia(unittest.TestCase):
         self.assertIn("no perder", razon)
         self.assertIn("%", razon)
 
+    def test_prefiere_ganar_sobre_sobrevivir_por_empate(self):
+        # A sobrevive más (82) pero gana poco (45%, mucho empate); B gana mucho
+        # (68%) con casi el mismo no-perder (80). Como el desempato del Survivor
+        # son las victorias, debe preferir a B. Ambos LOCALES (sin penalización).
+        pronos = [
+            {"local": "A", "visitante": "X", "prob_local_pct": 45.0, "prob_empate_pct": 37.0,
+             "prob_visitante_pct": 18.0, "no_perder_local_pct": 82.0, "no_perder_visitante_pct": 20.0},
+            {"local": "B", "visitante": "Y", "prob_local_pct": 68.0, "prob_empate_pct": 12.0,
+             "prob_visitante_pct": 20.0, "no_perder_local_pct": 80.0, "no_perder_visitante_pct": 22.0},
+        ]
+        r = mp.mejores_picks_estrategico(pronos, partidos_jugados_torneo=100, n=2)
+        self.assertEqual(r["picks"][0]["equipo"], "B")
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
