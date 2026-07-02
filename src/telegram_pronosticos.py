@@ -351,6 +351,41 @@ def _porteros_partido(p: Dict[str, Any],
     return " · ".join(partes)
 
 
+def _linea_goles(p: Dict[str, Any]) -> str:
+    """Línea de goles: pick Over/Under con su %, BTTS y marcador más probable.
+
+    Over/Under (masa total de la matriz) y marcador más probable (moda, un solo
+    resultado) son métricas distintas y pueden diferir de forma legítima. Cuando
+    chocan a simple vista, lo aclaramos para que no parezca un error.
+    """
+    pick_ou = p.get("pick_ou", "")
+    over = p.get("prob_over_pct")
+    # % del lado elegido: si el pick es Over, es prob_over; si Under, el complemento.
+    pct_txt = ""
+    if over is not None:
+        pct = float(over) if pick_ou == "Over" else round(100.0 - float(over), 1)
+        pct_txt = f" ({pct}%)"
+    marcador = str(p.get("marcador_mas_probable", ""))
+    linea = (f"     ⚽ Goles: {pick_ou} 2.5{pct_txt} · BTTS {p.get('pick_btts')} · "
+             f"marcador más probable {marcador}")
+    # ¿Choca la moda con el pick Over/Under?
+    total = None
+    if "-" in marcador:
+        try:
+            gl, gv = (int(x) for x in marcador.split("-", 1))
+            total = gl + gv
+        except (TypeError, ValueError):
+            total = None
+    if total is not None:
+        if pick_ou == "Over" and total <= 2:
+            linea += ("\n     ℹ️ <i>La moda (2 goles) es baja, pero el grueso de "
+                      "escenarios apunta a más goles: por eso el pick es Over.</i>")
+        elif pick_ou == "Under" and total >= 3:
+            linea += ("\n     ℹ️ <i>Ese marcador exacto es el más probable, pero el "
+                      "grueso de escenarios queda por debajo: por eso el pick es Under.</i>")
+    return linea
+
+
 def construir_mensaje(
     resultado: Dict[str, Any],
     equipos_usados: Optional[List[str]] = None,
@@ -460,7 +495,7 @@ def construir_mensaje(
             lineas.append(f"{n} 🏠 <b>{p['local']} vs {p['visitante']}</b> ✈️")
             lineas.append(f"     🎯 Pick: <b>{_pick_club(p)}</b>{pptxt}{conf}")
             lineas.append(f"     📊 Local {p['prob_local_pct']}% · Empate {p['prob_empate_pct']}% · Visita {p['prob_visitante_pct']}%")
-            lineas.append(f"     ⚽ Goles: {p['pick_ou']} 2.5 · BTTS {p['pick_btts']} · marcador {p['marcador_mas_probable']}")
+            lineas.append(_linea_goles(p))
             if p.get("explicacion_1x2"):
                 lineas.append(f"     💡 {p['explicacion_1x2']}")
             if p.get("explicacion_ou"):
