@@ -433,22 +433,30 @@ def porteros() -> List[Dict[str, Any]]:
     return d if isinstance(d, list) else []
 
 
-def transfers_365() -> Dict[str, Any]:
-    """/365scores/transfers — altas/bajas por equipo (agrupado). {} si no hay/falla."""
-    d = _get("/365scores/transfers")
+def transfers_365(status: str = "confirmado") -> Dict[str, Any]:
+    """
+    /365scores/transfers — altas/bajas por equipo (agrupado). Por defecto solo
+    movimientos CONFIRMADOS (status='confirmado') para evitar rumores; usa
+    status='' para traer todo. {} si no hay/falla.
+    """
+    params = {"status": status} if status else None
+    d = _get("/365scores/transfers", params)
     return d if isinstance(d, dict) else {}
 
 
 def _fmt_movimientos(lst: Any, campo_club: str) -> List[str]:
-    """Formatea una lista de movimientos a strings 'Jugador (club)'."""
+    """Formatea movimientos a 'Jugador (club)', deduplicando por jugador."""
     out: List[str] = []
+    vistos = set()
     for m in lst or []:
         if isinstance(m, dict):
             nom = m.get("jugador") or m.get("nombre") or m.get("player")
             club = m.get(campo_club)
-            if nom:
+            if nom and nom not in vistos:
+                vistos.add(nom)
                 out.append(f"{nom} ({club})" if club else str(nom))
-        elif isinstance(m, str):
+        elif isinstance(m, str) and m not in vistos:
+            vistos.add(m)
             out.append(m)
     return out
 
