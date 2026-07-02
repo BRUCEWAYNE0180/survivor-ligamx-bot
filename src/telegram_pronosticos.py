@@ -126,6 +126,16 @@ def _formatear_contexto(ctx: Optional[Dict[str, Any]]) -> List[str]:
         )
     if forma_l or forma_v:
         lineas.append(f"    Forma: {ctx.get('home')} {forma_l or '—'} · {ctx.get('away')} {forma_v or '—'}")
+    if isinstance(h2h, dict) and h2h.get("played"):
+        t1 = h2h.get("team1") or {}
+        t2 = h2h.get("team2") or {}
+        n = h2h.get("played")
+        temps = h2h.get("seasons_covered")
+        temps_txt = f", {temps} temps" if temps else ""
+        lineas.append(
+            f"    🤝 H2H ({n} duelos{temps_txt}): {t1.get('name', ctx.get('home'))} "
+            f"{t1.get('wins', 0)}V · {h2h.get('draws', 0)}E · {t2.get('wins', 0)}V {t2.get('name', ctx.get('away'))}"
+        )
     if riesgo_l:
         lineas.append(f"    ⚠️ En riesgo ({ctx.get('home')}): {', '.join(riesgo_l)}")
     if riesgo_v:
