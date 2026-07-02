@@ -82,3 +82,13 @@ class TestListaSeguimiento(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestRenderDecisivo(unittest.TestCase):
+    def test_encabezado_da_el_pick(self):
+        import telegram_pronosticos as tp
+        items = seg.lista_seguimiento(_picks(), n=2)
+        msg = tp.construir_mensaje_seguimiento(items, recomendado=_picks()[0])
+        self.assertIn("TU PICK DE SURVIVOR", msg)
+        self.assertIn("Cruz Azul", msg)          # el recomendado va en el encabezado
+        self.assertIn("Plan B automático", msg)  # los demás son respaldo, no menú

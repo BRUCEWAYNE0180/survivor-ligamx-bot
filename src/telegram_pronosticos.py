@@ -811,17 +811,26 @@ def enviar_pronosticos(equipos_usados: Optional[List[str]] = None,
 
 
 def construir_mensaje_seguimiento(items: List[Dict[str, Any]],
-                                  descartados: Optional[List[str]] = None) -> str:
+                                  descartados: Optional[List[str]] = None,
+                                  recomendado: Optional[Dict[str, Any]] = None) -> str:
     """Mensaje (HTML) con la lista de seguimiento secuencial del Survivor."""
     if not items:
         return ("📋 <b>LISTA DE SEGUIMIENTO</b>\n\n"
                 "Aún no hay candidatos (faltan datos de la jornada).\n\n"
                 f"{DISCLAIMER}")
+    rec = recomendado or items[0]
+    # Plan B = los demás candidatos (por si la alineación del recomendado sale mal).
+    plan_b = [it["equipo"] for it in items if it.get("equipo") != rec.get("equipo")][:2]
     lineas = [
-        "📋 <b>LISTA DE SEGUIMIENTO — SURVIVOR</b>",
-        "<i>Plan: revisa uno por uno ~1h antes de su partido. Si su alineación "
-        "convence, úsalo; si no, descártalo y espera al siguiente hasta cerrar uno.</i>",
+        "🎯 <b>TU PICK DE SURVIVOR</b>",
+        f"✅ <b>{rec['equipo']}</b> ({rec['condicion']} vs {rec['rival']}) — "
+        f"sobrevive {rec['no_perder_pct']}% · confianza {rec.get('nivel', '—')}",
+    ]
+    if plan_b:
+        lineas.append(f"<i>Plan B automático si su alineación sale mermada: {', '.join(plan_b)}.</i>")
+    lineas += [
         "",
+        "📋 <b>Seguimiento por hora</b> (revisa ~1h antes; el bot te dice si lo mantienes):",
     ]
     medallas = ["1️⃣", "2️⃣", "3️⃣", "4️⃣", "5️⃣", "6️⃣", "7️⃣", "8️⃣", "9️⃣"]
     for i, it in enumerate(items):
@@ -920,7 +929,8 @@ def enviar_seguimiento(equipos_usados: Optional[List[str]] = None, n: int = 5) -
         p.get("local", "") for p in pronosticos
         if _k(p.get("local", "")) not in seguidos and _k(p.get("local", "")) not in usados_set
     ][:6]
-    mensaje = construir_mensaje_seguimiento(items, descartados=descartados)
+    recomendado = picks[0] if picks else None
+    mensaje = construir_mensaje_seguimiento(items, descartados=descartados, recomendado=recomendado)
     enviado = enviar_mensaje(mensaje)
     return {"enviado": enviado, "candidatos": len(items)}
 
